@@ -1,0 +1,44 @@
+name: Check environment
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  diagnose:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    steps:
+      - name: macOS and hardware
+        run: |
+          sw_vers
+          uname -m
+          sysctl hw.ncpu hw.memsize
+          df -h
+      - name: Xcode and SDKs
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          xcodebuild -showsdks
+          ls -d /Applications/Xcode*.app
+      - name: Swift
+        run: xcrun swift --version
+      - name: Bazel and Bazelisk
+        run: |
+          if command -v bazel >/dev/null 2>&1; then
+            bazel --version || echo 'Bazel version check failed'
+          else
+            echo 'Bazel is not installed'
+          fi
+          if command -v bazelisk >/dev/null 2>&1; then
+            bazelisk --version || echo 'Bazelisk version check failed'
+          else
+            echo 'Bazelisk is not installed'
+          fi
+          echo 'Required project Bazel: 9.2.0'
+      - name: Additional build tools
+        run: |
+          python3 --version
+          git --version
+          clang --version
