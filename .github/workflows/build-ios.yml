@@ -1,0 +1,156 @@
+name: exteraGram iOS Port 0.0.1 - Simulator build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-build
+  cancel-in-progress: false
+
+jobs:
+  build-simulator:
+    # Only the standard free runner in a public repository.
+    if: github.event.repository.private == false
+    runs-on: xcode-27
+    timeout-minutes: 330
+    env:
+      PORT_VERSION: '0.0.1'
+    steps:
+      - name: Check out source (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Select and verify Xcode 27.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo xcode-select --switch /Applications/Xcode_27.1.app/Contents/Developer
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          sysctl hw.memsize hw.ncpu
+          df -h "$GITHUB_WORKSPACE"
+          test "$(uname -m)" = arm64
+          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+
+      - name: Fetch pinned submodules recursively
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          git submodule init
+          # The upstream relative tgcalls URL would otherwise resolve to the fork owner's account.
+          git config submodule.submodules/TgVoipWebrtc/tgcalls.url https://github.com/TelegramMessenger/tgcalls.git
+          git submodule update --init --recursive --depth 1 --jobs 2
+          git submodule status --recursive
+          if git submodule status --recursive | grep -E '^[-+U]'; then
+            echo 'A submodule is missing or at the wrong revision' >&2
+            exit 1
+          fi
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Install and verify Bazel from versions.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          read -r bazel_version bazel_sha <<< "$(python3 -c 'import json; print(*json.load(open("versions.json"))["bazel"].split(":"))')"
+          test "$bazel_version" = '9.2.0'
+          bazel_bin="$RUNNER_TEMP/bazel-$bazel_version-darwin-arm64"
+          curl --fail --location --retry 3 --output "$bazel_bin" "https://github.com/bazelbuild/bazel/releases/download/$bazel_version/bazel-$bazel_version-darwin-arm64"
+          printf '%s  %s\n' "$bazel_sha" "$bazel_bin" | shasum -a 256 -c -
+          chmod +x "$bazel_bin"
+          test "$("$bazel_bin" --version)" = "bazel $bazel_version"
+          echo "BAZEL_BIN=$bazel_bin" >> "$GITHUB_ENV"
+
+      - name: Prepare compile-only simulator configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Synthetic values are used only for compilation; login is not supported by this artifact.
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          config = json.loads(Path('build-system/template_minimal_development_configuration.json').read_text())
+          config.update(bundle_id='org.exteragram.iosport', api_id='0', api_hash='0' * 32,
+                        team_id='0000000000', is_internal_build='false', is_appstore_build='false',
+                        enable_siri=True, enable_icloud=True)
+          Path(os.environ['RUNNER_TEMP'], 'simulator-configuration.json').write_text(json.dumps(config))
+          PY
+          # A CI-only Bazel rc: no tracked files or app features are modified.
+          cat >> "$HOME/.bazelrc" <<'EOF'
+          startup --host_jvm_args=-Xmx3g
+          build --jobs=2
+          build --loading_phase_threads=2
+          build --local_resources=cpu=2
+          build --local_resources=memory=3500
+          build --worker_max_instances=1
+          build --worker_max_multiplex_instances=1
+          build --discard_analysis_cache
+          build --repository_cache=
+          build --//Telegram:disableProvisioningProfiles=true
+          build --curses=no
+          build --color=no
+          EOF
+
+      - name: Compile full Telegram target for iOS Simulator (ARM64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No extra disk action cache, no device signing, no disabled app extensions.
+          python3 build-system/Make/Make.py --bazel "$BAZEL_BIN" build \
+            --configurationPath "$RUNNER_TEMP/simulator-configuration.json" \
+            --xcodeManagedCodesigning \
+            --buildNumber 1 \
+            --configuration debug_sim_arm64
+
+      - name: Verify and package simulator app (not an iPhone IPA)
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/simulator-output"
+          mkdir -p "$stage"
+          if [[ -d bazel-bin/Telegram/Telegram.app ]]; then
+            app="bazel-bin/Telegram/Telegram.app"
+          else
+            if [[ -f bazel-bin/Telegram/Telegram.zip ]]; then
+              archive="bazel-bin/Telegram/Telegram.zip"
+            elif [[ -f bazel-bin/Telegram/Telegram.ipa ]]; then
+              archive="bazel-bin/Telegram/Telegram.ipa"
+            else
+              ls -la bazel-bin/Telegram/
+              echo 'Expected application archive was not found' >&2
+              exit 1
+            fi
+            ditto -x -k "$archive" "$stage"
+            app="$(find "$stage" -maxdepth 3 -type d -name Telegram.app -print -quit)"
+            test -n "$app"
+          fi
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
+          test -f "$app/$executable"
+          xcrun vtool -show-build "$app/$executable" | tee "$stage/platform.txt"
+          grep -Eiq 'platform[[:space:]]+(IOSSIMULATOR|IOS_SIMULATOR|7)' "$stage/platform.txt"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/exteragram-$PORT_VERSION-simulator.zip"
+          echo 'Simulator ARM64 binary compiled and verified. Not a device IPA.'
+
+      - name: Upload simulator artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exteraGram-iOS-Port-0.0.1-simulator-arm64
+          path: ${{ runner.temp }}/exteragram-0.0.1-simulator.zip
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Report final disk and memory usage
+        if: always()
+        shell: bash
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          vm_stat
