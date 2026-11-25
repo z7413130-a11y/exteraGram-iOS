@@ -1,0 +1,305 @@
+name: exteraGram iOS Port 0.0.2 - iPhone IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_ipa:
+        description: 'Build signed device IPA (leave unchecked for preflight only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-device-build
+  cancel-in-progress: false
+
+jobs:
+  iphone-ipa:
+    if: github.event.repository.private == false && github.ref == 'refs/heads/master'
+    runs-on: xcode-27
+    timeout-minutes: 330
+    env:
+      PORT_VERSION: '0.0.2'
+      IOS_BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID || 'org.exteragram.iosport' }}
+    steps:
+      - name: Validate required secrets without revealing their values
+        shell: bash
+        env:
+          BUILD_IPA: ${{ inputs.build_ipa }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          IOS_SIGNING_P12_BASE64: ${{ secrets.IOS_SIGNING_P12_BASE64 }}
+          IOS_SIGNING_P12_PASSWORD: ${{ secrets.IOS_SIGNING_P12_PASSWORD }}
+          IOS_PROFILE_MAIN_BASE64: ${{ secrets.IOS_PROFILE_MAIN_BASE64 }}
+          IOS_PROFILE_SHARE_BASE64: ${{ secrets.IOS_PROFILE_SHARE_BASE64 }}
+          IOS_PROFILE_NOTIFICATION_CONTENT_BASE64: ${{ secrets.IOS_PROFILE_NOTIFICATION_CONTENT_BASE64 }}
+          IOS_PROFILE_NOTIFICATION_SERVICE_BASE64: ${{ secrets.IOS_PROFILE_NOTIFICATION_SERVICE_BASE64 }}
+          IOS_PROFILE_SIRI_INTENTS_BASE64: ${{ secrets.IOS_PROFILE_SIRI_INTENTS_BASE64 }}
+          IOS_PROFILE_WIDGET_BASE64: ${{ secrets.IOS_PROFILE_WIDGET_BASE64 }}
+          IOS_PROFILE_BROADCAST_UPLOAD_BASE64: ${{ secrets.IOS_PROFILE_BROADCAST_UPLOAD_BASE64 }}
+          IOS_ARTIFACT_PASSPHRASE: ${{ secrets.IOS_ARTIFACT_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          api_id = os.environ.get('TELEGRAM_API_ID', '')
+          api_hash = os.environ.get('TELEGRAM_API_HASH', '')
+          if not re.fullmatch(r'[1-9][0-9]*', api_id) or not re.fullmatch(r'[0-9a-fA-F]{32}', api_hash):
+              sys.exit('Telegram API ID or Hash is missing or malformed; no values are printed.')
+          print('Telegram API ID and Hash are present and format-valid.')
+          names = ["IOS_SIGNING_P12_BASE64","IOS_SIGNING_P12_PASSWORD","IOS_PROFILE_MAIN_BASE64","IOS_PROFILE_SHARE_BASE64","IOS_PROFILE_NOTIFICATION_CONTENT_BASE64","IOS_PROFILE_NOTIFICATION_SERVICE_BASE64","IOS_PROFILE_SIRI_INTENTS_BASE64","IOS_PROFILE_WIDGET_BASE64","IOS_PROFILE_BROADCAST_UPLOAD_BASE64","IOS_ARTIFACT_PASSPHRASE"]
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              print('Missing signing or artifact protection data: ' + ', '.join(missing))
+          elif len(os.environ['IOS_ARTIFACT_PASSPHRASE']) < 16:
+              missing.append('IOS_ARTIFACT_PASSPHRASE')
+              print('Artifact passphrase must be at least 16 characters; choose a strong random value.')
+          if os.environ['BUILD_IPA'].lower() == 'true' and missing:
+              sys.exit('Build not started: complete the required data first.')
+          if not missing:
+              print('All required input names are populated. Validity is checked during a full build.')
+          PY
+
+      - name: Check out source
+        if: inputs.build_ipa
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Select Xcode and pinned ARM64 toolchain
+        if: inputs.build_ipa
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo xcode-select --switch /Applications/Xcode_27.1.app/Contents/Developer
+          sw_vers
+          test "$(uname -m)" = arm64
+          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+          xcrun --sdk iphoneos --show-sdk-version
+          sysctl hw.memsize hw.ncpu
+          df -h "$GITHUB_WORKSPACE"
+          read -r bazel_version bazel_sha <<< "$(python3 -c 'import json; print(*json.load(open("versions.json"))["bazel"].split(":"))')"
+          test "$bazel_version" = '9.2.0'
+          bazel_bin="$RUNNER_TEMP/bazel-$bazel_version-darwin-arm64"
+          curl --fail --location --retry 3 --output "$bazel_bin" "https://github.com/bazelbuild/bazel/releases/download/$bazel_version/bazel-$bazel_version-darwin-arm64"
+          printf '%s  %s\n' "$bazel_sha" "$bazel_bin" | shasum -a 256 -c -
+          chmod +x "$bazel_bin"
+          test "$("$bazel_bin" --version)" = "bazel $bazel_version"
+          echo "BAZEL_BIN=$bazel_bin" >> "$GITHUB_ENV"
+
+      - name: Install and validate Apple Development signing material
+        if: inputs.build_ipa
+        shell: bash
+        env:
+          IOS_SIGNING_P12_BASE64: ${{ secrets.IOS_SIGNING_P12_BASE64 }}
+          IOS_SIGNING_P12_PASSWORD: ${{ secrets.IOS_SIGNING_P12_PASSWORD }}
+          IOS_PROFILE_MAIN_BASE64: ${{ secrets.IOS_PROFILE_MAIN_BASE64 }}
+          IOS_PROFILE_SHARE_BASE64: ${{ secrets.IOS_PROFILE_SHARE_BASE64 }}
+          IOS_PROFILE_NOTIFICATION_CONTENT_BASE64: ${{ secrets.IOS_PROFILE_NOTIFICATION_CONTENT_BASE64 }}
+          IOS_PROFILE_NOTIFICATION_SERVICE_BASE64: ${{ secrets.IOS_PROFILE_NOTIFICATION_SERVICE_BASE64 }}
+          IOS_PROFILE_SIRI_INTENTS_BASE64: ${{ secrets.IOS_PROFILE_SIRI_INTENTS_BASE64 }}
+          IOS_PROFILE_WIDGET_BASE64: ${{ secrets.IOS_PROFILE_WIDGET_BASE64 }}
+          IOS_PROFILE_BROADCAST_UPLOAD_BASE64: ${{ secrets.IOS_PROFILE_BROADCAST_UPLOAD_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$RUNNER_TEMP/ios-signing"
+          mkdir -p "$root/profiles" "$root/certs"
+          python3 - <<'PY'
+          import base64, datetime, hashlib, os, plistlib, subprocess, sys
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'], 'ios-signing')
+          bundle = os.environ['IOS_BUNDLE_ID']
+          specs = [["MAIN","Telegram",""],["SHARE","Share",".Share"],["NOTIFICATION_CONTENT","NotificationContent",".NotificationContent"],["NOTIFICATION_SERVICE","NotificationService",".NotificationService"],["SIRI_INTENTS","Intents",".SiriIntents"],["WIDGET","Widget",".Widget"],["BROADCAST_UPLOAD","BroadcastUpload",".BroadcastUpload"]]
+          def decode(name, path):
+              try:
+                  path.write_bytes(base64.b64decode(''.join(os.environ[name].split()), validate=True))
+              except Exception:
+                  sys.exit('Invalid Base64 for ' + name)
+          decode('IOS_SIGNING_P12_BASE64', root / 'certs' / 'signing.p12')
+          team = None
+          devices = None
+          certs = None
+          for label, filename, suffix in specs:
+              name = 'IOS_PROFILE_' + label + '_BASE64'
+              file = root / 'profiles' / (filename + '.mobileprovision')
+              decode(name, file)
+              try:
+                  data = plistlib.loads(subprocess.check_output(['security', 'cms', '-D', '-i', str(file)], stderr=subprocess.DEVNULL))
+                  ent = data['Entitlements']
+                  current_team = data['TeamIdentifier'][0]
+                  expiration = data['ExpirationDate'].replace(tzinfo=datetime.timezone.utc)
+                  allowed_devices = set(data.get('ProvisionedDevices', []))
+                  fingerprints = {hashlib.sha1(c).hexdigest().upper() for c in data['DeveloperCertificates']}
+              except Exception:
+                  sys.exit('Cannot decode provisioning profile: ' + label)
+              if team is None:
+                  team = current_team
+              if current_team != team or ent.get('application-identifier') != team + '.' + bundle + suffix:
+                  sys.exit('Wrong team or bundle identifier in profile: ' + label)
+              if not ent.get('get-task-allow') or not allowed_devices or expiration <= datetime.datetime.now(datetime.timezone.utc):
+                  sys.exit('Expected a valid development profile with registered devices: ' + label)
+              if suffix == '' and ent.get('aps-environment') != 'development':
+                  sys.exit('Main profile must have development Push Notifications enabled.')
+              devices = allowed_devices if devices is None else devices & allowed_devices
+              certs = fingerprints if certs is None else certs & fingerprints
+          if not devices or not certs:
+              sys.exit('Profiles must share at least one registered device and a signing certificate.')
+          (root / 'allowed-identities.txt').write_text('\n'.join(sorted(certs)))
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write('IOS_TEAM_ID=' + team + '\n')
+          print('All seven provisioning profiles are valid development profiles for the configured app and share a device/certificate.')
+          PY
+          keychain="$root/build.keychain-db"
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$root/certs/signing.p12" -P "$IOS_SIGNING_P12_PASSWORD" -t cert -f pkcs12 -k "$keychain" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security find-identity -v -p codesigning "$keychain" > "$root/identities.txt"
+          python3 - <<'PY'
+          import os, re, sys
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'], 'ios-signing')
+          allowed = set((root / 'allowed-identities.txt').read_text().splitlines())
+          actual = set(re.findall(r'\b[0-9A-F]{40}\b', (root / 'identities.txt').read_text()))
+          if not allowed & actual:
+              sys.exit('Imported signing identity does not match the provisioning profiles.')
+          print('Apple signing identity matches provisioning profiles.')
+          PY
+
+      - name: Load pinned Git submodules
+        if: inputs.build_ipa
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          git submodule init
+          git config submodule.submodules/TgVoipWebrtc/tgcalls.url https://github.com/TelegramMessenger/tgcalls.git
+          git submodule update --init --recursive --depth 1 --jobs 2
+          git submodule status --recursive
+          if git submodule status --recursive | grep -E '^[-+U]'; then exit 1; fi
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Prepare temporary device build configuration
+        if: inputs.build_ipa
+        shell: bash
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          config = json.loads(Path('build-system/template_minimal_development_configuration.json').read_text())
+          config.update(bundle_id=os.environ['IOS_BUNDLE_ID'], team_id=os.environ['IOS_TEAM_ID'],
+                        api_id=os.environ['TELEGRAM_API_ID'], api_hash=os.environ['TELEGRAM_API_HASH'],
+                        is_internal_build='false', is_appstore_build='false', enable_siri=True, enable_icloud=True)
+          Path(os.environ['RUNNER_TEMP'], 'device-configuration.json').write_text(json.dumps(config))
+          # Change only the app's version metadata in this disposable checkout, not toolchain versions or Git history.
+          path = Path('versions.json')
+          versions = json.loads(path.read_text())
+          versions['app'] = os.environ['PORT_VERSION']
+          path.write_text(json.dumps(versions, indent=4) + '\n')
+          PY
+          cat >> "$HOME/.bazelrc" <<'EOF'
+          startup --host_jvm_args=-Xmx3g
+          build --jobs=2
+          build --loading_phase_threads=2
+          build --local_resources=cpu=2
+          build --local_resources=memory=3500
+          build --worker_max_instances=1
+          build --worker_max_multiplex_instances=1
+          build --discard_analysis_cache
+          build --repository_cache=
+          build --curses=no
+          build --color=no
+          EOF
+
+      - name: Compile and sign complete device ARM64 target
+        if: inputs.build_ipa
+        shell: bash
+        run: |
+          set -euo pipefail
+          # debug_arm64 is upstream's device debug configuration; no disabled extensions or provisioning bypass.
+          python3 -u - <<'PY'
+          import base64, json, os, re, subprocess, sys
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          config_path = root / 'device-configuration.json'
+          config = json.loads(config_path.read_text())
+          redactions = set()
+          for value in (config['api_id'], config['api_hash']):
+              redactions.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
+          cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN'], 'build',
+                 '--configurationPath', str(config_path), '--codesigningInformationPath', str(root / 'ios-signing'),
+                 '--buildNumber', '2', '--configuration', 'debug_arm64']
+          proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+          for line in proc.stdout:
+              if re.search(r'\b(?:telegram_)?api_(?:id|hash)\b', line, re.I):
+                  print('[credential-related line redacted]', flush=True)
+                  continue
+              for value in sorted(redactions, key=len, reverse=True):
+                  line = line.replace(value, '[redacted]')
+              print(line, end='', flush=True)
+          sys.exit(proc.wait())
+          PY
+
+      - name: Verify iPhone IPA and protect it before upload
+        if: inputs.build_ipa
+        shell: bash
+        env:
+          IOS_ARTIFACT_PASSPHRASE: ${{ secrets.IOS_ARTIFACT_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          ipa=bazel-bin/Telegram/Telegram.ipa
+          test -s "$ipa"
+          stage="$RUNNER_TEMP/iphone-check"
+          mkdir -p "$stage"
+          ditto -x -k "$ipa" "$stage"
+          app="$(find "$stage/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$app"
+          info="$app/Info.plist"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info")"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info")" = "$PORT_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info")" = "$IOS_BUNDLE_ID"
+          xcrun lipo -verify_arch arm64 "$app/$executable"
+          xcrun vtool -show-build "$app/$executable" | tee "$stage/platform.txt"
+          grep -Eq 'platform[[:space:]]+(IOS|2)[[:space:]]*$' "$stage/platform.txt"
+          test -s "$app/embedded.mobileprovision"
+          codesign --verify --deep --strict "$app"
+          output="$RUNNER_TEMP/exteragram-0.0.2-iphone.ipa.gpg"
+          printf '%s\n' "$IOS_ARTIFACT_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 --compress-algo none --output "$output" "$ipa"
+          test -s "$output"
+          echo 'Verified a signed iOS ARM64 device application; encrypted IPA is ready.'
+
+      - name: Upload only encrypted IPA (public repository)
+        if: inputs.build_ipa
+        uses: actions/upload-artifact@v7
+        with:
+          name: exteraGram-iOS-Port-0.0.2-iPhone-encrypted
+          path: ${{ runner.temp }}/exteragram-0.0.2-iphone.ipa.gpg
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Clean temporary signing and credential files
+        if: always() && inputs.build_ipa
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/ios-signing"
+          if [[ -e "$root/build.keychain-db" ]]; then security delete-keychain "$root/build.keychain-db" || true; fi
+          rm -rf "$root" "$RUNNER_TEMP/iphone-check"
+          rm -f "$RUNNER_TEMP/device-configuration.json" "$GITHUB_WORKSPACE/build-input/configuration-repository/variables.bzl"
+          df -h "$GITHUB_WORKSPACE"
