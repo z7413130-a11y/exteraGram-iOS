@@ -1903,6 +1903,15 @@ apple_prebuilt_watchos_application(
     tags = ["manual"],
 )
 
+plist_fragment(
+    name = "TelegramCloudKitInfoPlist",
+    extension = "plist",
+    template = """
+    <key>TelegramCloudKitContainer</key>
+    <string>iCloud.{telegram_bundle_id}</string>
+    """.format(telegram_bundle_id = telegram_bundle_id),
+)
+
 ios_application(
     name = "Telegram",
     bundle_id = "{telegram_bundle_id}".format(
@@ -1921,7 +1930,7 @@ ios_application(
         ":VersionInfoPlist",
         ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
-    ],
+    ] + ([":TelegramCloudKitInfoPlist"] if telegram_enable_icloud else []),
     app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
     alternate_icons = [
         ":{}".format(name) for name in alternate_icon_folders
