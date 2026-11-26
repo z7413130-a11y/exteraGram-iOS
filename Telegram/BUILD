@@ -542,6 +542,11 @@ siri_fragment = "" if not telegram_enable_siri else """
 <true/>
 """
 
+siri_usage_fragment = "" if not telegram_enable_siri else """
+    <key>NSSiriUsageDescription</key>
+    <string>You can use Siri to send messages.</string>
+"""
+
 aps_fragment = "" if telegram_aps_environment == "" else """
 <key>aps-environment</key>
 <string>{telegram_aps_environment}</string>
@@ -1773,8 +1778,7 @@ plist_fragment(
     <string>We need this so that you can share photos and videos from your photo library.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>We need this so that you can share photos and videos from your photo library.</string>
-    <key>NSSiriUsageDescription</key>
-    <string>You can use Siri to send messages.</string>
+    {siri_usage_fragment}
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>We need this to transcribe audio messages on your request.</string>
     <key>NSUserActivityTypes</key>
@@ -1875,6 +1879,7 @@ plist_fragment(
     <true/>
     """.format(
         telegram_bundle_id = telegram_bundle_id,
+        siri_usage_fragment = siri_usage_fragment,
     )
 )
 
