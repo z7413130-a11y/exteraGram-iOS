@@ -20,6 +20,11 @@
 @property (nonatomic, readonly) bool isICloudEnabled;
 @property (nonatomic, readonly) bool isSiriEnabled;
 
+// Optional SiriKit operations. -1 means unavailable, including when the signed
+// process has no Siri capability. The completion receives false in that case.
+- (NSInteger)safeSiriAuthorizationStatus;
+- (void)safeRequestSiriAuthorization:(void (^ _Nonnull)(BOOL))completion NS_SWIFT_NAME(safeRequestSiriAuthorization(_:));
+
 + (NSString * _Nullable)keychainAccessGroupForBaseAppBundleId:(NSString * _Nonnull)baseAppBundleId NS_SWIFT_NAME(keychainAccessGroup(baseAppBundleId:));
 
 + (DeviceSpecificEncryptionParameters * _Nonnull)deviceSpecificEncryptionParameters:(NSString * _Nonnull)rootPath baseAppBundleId:(NSString * _Nonnull)baseAppBundleId;
