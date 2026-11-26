@@ -54,10 +54,23 @@ import WalletSendScreen
 import PasscodeCore
 import LiquidGlassShapes
 import MTProtoRustEngine
+import os.log
 
 #if DEBUG
 import AlertComponent
 #endif
+
+private let appStartupLog = OSLog(subsystem: "org.exteragram.iosport", category: "Startup")
+
+private func launchStorageBaseURL(appGroupURL: URL?, fileManager: FileManager) throws -> URL {
+    if let appGroupURL {
+        return appGroupURL
+    }
+    let applicationSupport = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+    let privateURL = applicationSupport.appendingPathComponent("TelegramLocalData", isDirectory: true)
+    try fileManager.createDirectory(at: privateURL, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+    return privateURL
+}
 
 private let handleVoipNotifications = false
 
@@ -241,6 +254,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     var nativeWindow: (UIWindow & WindowHost)?
     var mainWindow: Window1!
     private var statusBarHost: ApplicationStatusBarHost?
+    private var launchStorageUnavailable = false
     private var dataImportSplash: LegacyDataImportSplash?
     private var memoryUsageOverlayView: UILabel?
     
@@ -348,6 +362,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         precondition(!testIsLaunched)
         testIsLaunched = true
+        os_log("launch.started", log: appStartupLog, type: .default)
         CrashReportCollector.shared.start()
         
         let _ = voipTokenPromise.get().start(next: { token in
@@ -445,6 +460,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.window = window
         self.nativeWindow = window
+        os_log("launch.window.created", log: appStartupLog, type: .default)
         
         hostView.containerView.layer.addSublayer(MetalEngine.shared.rootLayer)
         // On the first start after an update, compile the pipelines that would otherwise stall their first use.
@@ -565,10 +581,37 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let baseAppBundleId = Bundle.main.bundleIdentifier!
         let appGroupName = "group.\(baseAppBundleId)"
-        try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .mainApp, biometricKeychainService: walletBiometricKeychainService), privateAccessGroup: {
-            BuildConfig.keychainAccessGroup(baseAppBundleId: baseAppBundleId)
-        })
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let fileManager = FileManager.default
+        let appGroupURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let isPrivateStorage = appGroupURL == nil
+        if isPrivateStorage {
+            os_log("launch.app-group.unavailable", log: appStartupLog, type: .default)
+        } else {
+            os_log("launch.app-group.available", log: appStartupLog, type: .default)
+        }
+
+        let storageBaseURL: URL
+        do {
+            storageBaseURL = try launchStorageBaseURL(appGroupURL: appGroupURL, fileManager: fileManager)
+        } catch {
+            os_log("launch.private-storage.failed", log: appStartupLog, type: .error)
+            self.launchStorageUnavailable = true
+            return true
+        }
+
+        do {
+            try PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .mainApp, biometricKeychainService: walletBiometricKeychainService, useAppPrivateKeychain: isPrivateStorage), privateAccessGroup: {
+                BuildConfig.keychainAccessGroup(baseAppBundleId: baseAppBundleId)
+            })
+            if isPrivateStorage {
+                _ = try PasscodeEnvironment.shared.privateAccessGroup()
+                os_log("launch.private-keychain.resolved", log: appStartupLog, type: .default)
+            }
+        } catch {
+            os_log("launch.keychain.configuration-failed", log: appStartupLog, type: .error)
+            self.launchStorageUnavailable = true
+            return true
+        }
         
         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
         self.buildConfig = buildConfig
@@ -691,11 +734,6 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             networkEngineFactory: RustNetworkEngineFactory()
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
-            return true
-        }
-        
         var isDebugConfiguration = false
         #if DEBUG
         isDebugConfiguration = true
@@ -715,15 +753,24 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
         let rootPath: String
         if isUITest {
-            let testDataPath = appGroupUrl.path + "/telegram-ui-tests-data"
-            let _ = try? FileManager.default.removeItem(atPath: testDataPath)
-            rootPath = rootPathForBasePath(testDataPath)
+            let testDataURL = storageBaseURL.appendingPathComponent("telegram-ui-tests-data", isDirectory: true)
+            let _ = try? fileManager.removeItem(at: testDataURL)
+            rootPath = rootPathForBasePath(testDataURL.path)
         } else {
-            rootPath = rootPathForBasePath(appGroupUrl.path)
+            rootPath = rootPathForBasePath(storageBaseURL.path)
         }
-        if !isUITest {
-            performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
+        if let appGroupURL, !isUITest {
+            performAppGroupUpgrades(appGroupPath: appGroupURL.path, rootPath: rootPath)
+        } else if isPrivateStorage {
+            do {
+                try fileManager.createDirectory(atPath: rootPath, withIntermediateDirectories: true, attributes: nil)
+            } catch {
+                os_log("launch.private-storage.data-directory-failed", log: appStartupLog, type: .error)
+                self.launchStorageUnavailable = true
+                return true
+            }
         }
+        os_log("launch.storage.selected", log: appStartupLog, type: .default)
         
         let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
         let encryptionParameters = ValueBoxEncryptionParameters(forceEncryptionIfNoSet: false, key: ValueBoxEncryptionParameters.Key(data: deviceSpecificEncryptionParameters.key)!, salt: ValueBoxEncryptionParameters.Salt(data: deviceSpecificEncryptionParameters.salt)!)
@@ -755,6 +802,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         
         if !writeAbilityTestSuccess {
+            os_log("launch.storage.write-check-failed", log: appStartupLog, type: .error)
             let alertController = UIAlertController(title: nil, message: "The device does not have sufficient free space.", preferredStyle: .alert)
             alertController.addAction(UIAlertAction(title: "OK", style: .default, handler: { _ in
                 preconditionFailure()
@@ -842,7 +890,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> distinctUntilChanged
         )
         
-        let applicationBindings = TelegramApplicationBindings(isMainApp: true, appBundleId: baseAppBundleId, appBuildType: buildConfig.isAppStoreBuild ? .public : .internal, containerPath: appGroupUrl.path, appSpecificScheme: buildConfig.appSpecificUrlScheme, openUrl: { url in
+        let applicationBindings = TelegramApplicationBindings(isMainApp: true, appBundleId: baseAppBundleId, appBuildType: buildConfig.isAppStoreBuild ? .public : .internal, containerPath: storageBaseURL.path, appSpecificScheme: buildConfig.appSpecificUrlScheme, openUrl: { url in
             var parsedUrl = URL(string: url)
             if let parsed = parsedUrl {
                 if parsed.scheme == nil || parsed.scheme!.isEmpty {
@@ -1057,10 +1105,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
         
+        os_log("launch.account-manager.initializing", log: appStartupLog, type: .default)
         let accountManager: AccountManager<TelegramAccountManagerTypes> = setupAccountManager(basePath: rootPath + "/accounts-metadata", isTemporary: false, isReadOnly: false, useCaches: true, removeDatabaseOnError: true, resetLocalSecrets: {
             try resetWalletLocalSecrets()
         })
         self.accountManager = accountManager
+        os_log("launch.account-manager.initialized", log: appStartupLog, type: .default)
 
         telegramUIDeclareEncodables()
         initializeAccountManagement()
@@ -1128,7 +1178,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         |> mapToSignal { [self] accountManager, initialPresentationDataAndSettings -> Signal<(SharedApplicationContext, LoggingSettings), NoError> in
             self.mainWindow?.hostView.containerView.backgroundColor =  initialPresentationDataAndSettings.presentationData.theme.chatList.backgroundColor
             
-            let legacyBasePath = appGroupUrl.path
+            let legacyBasePath = storageBaseURL.path
             
             let presentationDataPromise = Promise<PresentationData>()
             let appLockContext = AppLockContextImpl(rootPath: rootPath, window: self.mainWindow!, rootController: self.window?.rootViewController, applicationBindings: applicationBindings, accountManager: accountManager, presentationDataSignal: presentationDataPromise.get(), lockIconInitialFrame: {
@@ -1277,6 +1327,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             Logger.shared.logToConsole = loggingSettings.logToConsole
             Logger.shared.redactSensitiveData = loggingSettings.redactSensitiveData
             
+            os_log("launch.shared-context.ready", log: appStartupLog, type: .default)
             return .single(sharedApplicationContext)
         })
             
@@ -1379,6 +1430,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> deliverOnMainQueue
             |> map { accountAndSettings -> UnauthorizedApplicationContext? in
                 return accountAndSettings.flatMap { account, otherAccountPhoneNumbers in
+                    os_log("launch.authorization-context.created", log: appStartupLog, type: .default)
                     return UnauthorizedApplicationContext(apiId: buildConfig.apiId, apiHash: buildConfig.apiHash, sharedContext: sharedApplicationContext.sharedContext, account: account, otherAccountPhoneNumbers: otherAccountPhoneNumbers)
                 }
             }
@@ -1517,6 +1569,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { _ in
                     progressDisposable.dispose()
+                    os_log("launch.authorization-ui.presenting", log: appStartupLog, type: .default)
                     self.mainWindow.present(context.rootController, on: .root)
                 }))
             } else {
@@ -1771,6 +1824,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
                 
+        os_log("launch.delegate.finished", log: appStartupLog, type: .default)
         return true
     }
     
@@ -1811,6 +1865,14 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
         self.mainWindow?.updateDeviceMetrics()
         self.window?.makeKeyAndVisible()
+        os_log("launch.scene.window-visible", log: appStartupLog, type: .default)
+        if self.launchStorageUnavailable {
+            self.launchStorageUnavailable = false
+            let alert = UIAlertController(title: nil, message: "Telegram could not open its local storage.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            self.window?.rootViewController?.present(alert, animated: false)
+            return
+        }
 
         for context in connectionOptions.urlContexts {
             let url = context.url
