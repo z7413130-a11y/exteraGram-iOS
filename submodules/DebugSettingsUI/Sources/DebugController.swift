@@ -195,7 +195,11 @@ private enum DebugLogAction {
         switch self {
         case .sendLogs:
             let _ = (Logger.shared.collectLogs()
-            |> deliverOnMainQueue).start(next: { logs in
+            |> deliverOnMainQueue).start(next: { collectedLogs in
+                var logs = collectedLogs
+                if let journal = StartupJournal.exportFile() {
+                    logs.append((journal.lastPathComponent, journal.path))
+                }
 
                 if destination == .telegram, let context = arguments.context, context.sharedContext.applicationBindings.isMainApp {
                     let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyWriteable, .excludeDisabled]))
