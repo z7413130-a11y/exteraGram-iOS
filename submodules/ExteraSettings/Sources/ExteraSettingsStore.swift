@@ -56,6 +56,13 @@ public final class ExteraSettingsStore {
         self.changePipe.putNext(())
     }
 
+    public func reset() {
+        for definition in ExteraPreferences.androidDefinitions + ExteraPreferences.iOSDefinitions {
+            self.defaults.removeObject(forKey: self.storageKey(definition))
+        }
+        self.changePipe.putNext(())
+    }
+
     private func storageKey(_ definition: ExteraSettingDefinition) -> String {
         return "org.exteragram.iosport.preferences." + definition.key
     }

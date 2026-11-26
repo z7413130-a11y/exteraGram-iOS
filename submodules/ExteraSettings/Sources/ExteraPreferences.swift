@@ -181,6 +181,8 @@ public enum ExteraPreferences {
     /// iOS-only opt-in for the send-menu command.
     public static let translateDrafts = ExteraPreference<Bool>("ios.translateDrafts", .chats, false)
 
+    static var iOSDefinitions: [ExteraSettingDefinition] { [translateDrafts.definition] }
+
     public static let androidDefinitions: [ExteraSettingDefinition] = [
         translationProvider.definition,
         disableNumberRounding.definition,
