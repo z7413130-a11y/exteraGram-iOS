@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -1751,7 +1752,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 leftInset: layout.safeInsets.left,
                 rightInset: layout.safeInsets.right,
                 trailingButtonsInset: layout.navigationBarTrailingButtonsInset,
-                search: ChatListNavigationBar.Search(isEnabled: true),
+                search: ExteraSettingsStore.shared.value(for: ExteraPreferences.hideDialogsSearchBar) && !self.isSearchDisplayControllerActive ? nil : ChatListNavigationBar.Search(isEnabled: true),
                 activeSearch: self.isSearchDisplayControllerActive,
                 primaryContent: headerContent?.primaryContent,
                 secondaryContent: headerContent?.secondaryContent,
@@ -2569,6 +2570,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
 }
 
 func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
+    guard !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideStories) else { return false }
     if !storySubscriptions.items.isEmpty {
         return true
     }

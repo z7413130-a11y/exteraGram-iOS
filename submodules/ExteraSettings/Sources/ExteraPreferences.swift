@@ -114,8 +114,8 @@ public enum ExteraPreferences {
     public static let inlineDigitGrouping = ExteraPreference<Bool>("inlineDigitGrouping", .chats, true)
     public static let disableMarkdown = ExteraPreference<Bool>("disableMarkdown", .chats, false)
     public static let hideSendAsPeer = ExteraPreference<Bool>("hideSendAsPeer", .chats, false)
-    public static let removeMessageTail = ExteraPreference<Bool>("removeMessageTail", .chats, true)
-    public static let replaceEditedWithIcon = ExteraPreference<Bool>("replaceEditedWithIcon", .chats, true)
+    public static let removeMessageTail = ExteraPreference<Bool>("removeMessageTail", .chats, false)
+    public static let replaceEditedWithIcon = ExteraPreference<Bool>("replaceEditedWithIcon", .chats, false)
     public static let showOnlineStatus = ExteraPreference<Bool>("showOnlineStatus", .chats, false)
     public static let showForwardsCount = ExteraPreference<Bool>("showForwardsCount", .chats, false)
     public static let hideShareButton = ExteraPreference<Bool>("hideShareButton", .chats, false)
@@ -181,7 +181,18 @@ public enum ExteraPreferences {
     /// iOS-only opt-in for the send-menu command.
     public static let translateDrafts = ExteraPreference<Bool>("ios.translateDrafts", .chats, false)
 
-    static var iOSDefinitions: [ExteraSettingDefinition] { [translateDrafts.definition] }
+    public static let hideCallsTab = ExteraPreference<Bool>("ios.hideCallsTab", .appearance, false)
+    public static let hidePremiumBadges = ExteraPreference<Bool>("ios.hidePremiumBadges", .appearance, false)
+    public static let hideAnimatedEmoji = ExteraPreference<Bool>("ios.hideAnimatedEmoji", .appearance, false)
+    public static let confirmStickerSend = ExteraPreference<Bool>("ios.confirmStickerSend", .chats, false)
+    public static let confirmGifSend = ExteraPreference<Bool>("ios.confirmGifSend", .chats, false)
+    public static let confirmCall = ExteraPreference<Bool>("ios.confirmCall", .chats, false)
+    public static let hideVideoRecording = ExteraPreference<Bool>("ios.hideVideoRecording", .chats, false)
+
+    static let iOSDefinitions = [
+        translateDrafts.definition, hideCallsTab.definition, hidePremiumBadges.definition, hideAnimatedEmoji.definition,
+        confirmStickerSend.definition, confirmGifSend.definition, confirmCall.definition, hideVideoRecording.definition,
+    ]
 
     public static let androidDefinitions: [ExteraSettingDefinition] = [
         translationProvider.definition,

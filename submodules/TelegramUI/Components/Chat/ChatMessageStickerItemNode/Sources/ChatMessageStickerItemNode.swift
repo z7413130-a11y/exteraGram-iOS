@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -468,6 +469,8 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
             let incoming = item.content.effectivelyIncoming(item.context.account.peerId, associatedData: item.associatedData)
             var imageSize: CGSize = CGSize(width: 100.0, height: 100.0)
             if let telegramFile = telegramFile {
+                let scale = ExteraAppearance.stickerScale
+                let displaySize = CGSize(width: displaySize.width * scale, height: displaySize.height * scale)
                 if let dimensions = telegramFile.dimensions {
                     imageSize = dimensions.cgSize.aspectFitted(displaySize)
                 } else if let thumbnailSize = telegramFile.previewRepresentations.first?.dimensions {
@@ -661,7 +664,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
             var viewCount: Int? = nil
             var dateReplies = 0
             var starsCount: Int64?
-            var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.message)
+            var dateReactionsAndPeers = exteraVisibleReactions(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.message)
             if item.message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                 dateReactionsAndPeers = ([], [])
             }

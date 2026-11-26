@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -2657,7 +2658,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         var bottomNodeMergeStatus: ChatMessageBubbleMergeStatus = mergedBottom.merged ? (incoming ? .Left : .Right) : .None(incoming ? .Incoming : .Outgoing)
         
         let bubbleReactions: ReactionsMessageAttribute
-        if needReactions || forceReactionsOutside {
+        if (needReactions || forceReactionsOutside) && !exteraHidesReactions(item.message, accountPeerId: item.context.account.peerId) {
             bubbleReactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         } else {
             bubbleReactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
@@ -2812,7 +2813,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     currentCredibilityIcon = (.animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: incoming ? item.presentationData.theme.theme.chat.message.incoming.mediaPlaceholderColor : item.presentationData.theme.theme.chat.message.outgoing.mediaPlaceholderColor, themeColor: color.withMultipliedAlpha(0.4), loopMode: .count(2)), emojiStatus.color.flatMap { UIColor(rgb: UInt32(bitPattern: $0)) })
                 } else if effectiveAuthor.isVerified {
                     currentCredibilityIcon = (.verified(fillColor: item.presentationData.theme.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.theme.list.itemCheckColors.foregroundColor, sizeType: .compact), nil)
-                } else if effectiveAuthor.isPremium {
+                } else if effectiveAuthor.isPremium && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hidePremiumBadges) {
                     currentCredibilityIcon = (.premium(color: color.withMultipliedAlpha(0.4)), nil)
                 }
             }
@@ -2933,7 +2934,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 var viewCount: Int?
                 var dateReplies = 0
                 var starsCount: Int64?
-                var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: message)
+                var dateReactionsAndPeers = exteraVisibleReactions(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: message)
                 if message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                     dateReactionsAndPeers = ([], [])
                 }
@@ -3784,7 +3785,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                     bottomLeft = .none(tail: false)
                                 case let .None(tailStatus):
                                     if case .Incoming = tailStatus {
-                                        bottomLeft = .none(tail: true)
+                                        bottomLeft = .none(tail: !ExteraSettingsStore.shared.value(for: ExteraPreferences.removeMessageTail))
                                     } else {
                                         bottomLeft = .none(tail: false)
                                     }
@@ -3801,7 +3802,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                     bottomRight = .mergedBubble
                                 case let .None(tailStatus):
                                     if case .Outgoing = tailStatus {
-                                        bottomRight = .none(tail: true)
+                                        bottomRight = .none(tail: !ExteraSettingsStore.shared.value(for: ExteraPreferences.removeMessageTail))
                                     } else {
                                         bottomRight = .none(tail: false)
                                     }
@@ -4459,7 +4460,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         } else if case .semanticallyMerged = updatedMergedTop {
             forceBackgroundSide = true
         }
-        let mergeType = ChatMessageBackgroundMergeType(top: updatedMergedTop == .fullyMerged, bottom: updatedMergedBottom == .fullyMerged, side: forceBackgroundSide)
+        let mergeType = ChatMessageBackgroundMergeType(top: updatedMergedTop == .fullyMerged, bottom: updatedMergedBottom == .fullyMerged,
+            side: forceBackgroundSide || ExteraSettingsStore.shared.value(for: ExteraPreferences.removeMessageTail))
         let backgroundType: ChatMessageBackgroundType
         if hideBackground {
             backgroundType = .none

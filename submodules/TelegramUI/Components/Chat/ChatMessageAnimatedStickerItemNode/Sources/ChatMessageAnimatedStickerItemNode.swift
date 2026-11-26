@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import AVFoundation
@@ -647,7 +648,9 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
         } else if let emojiFile = self.emojiFile {
             file = emojiFile
             
-            if emojiFile.isCustomEmoji {
+            if ExteraSettingsStore.shared.value(for: ExteraPreferences.hideAnimatedEmoji) {
+                playbackMode = .still(.start)
+            } else if emojiFile.isCustomEmoji {
                 playbackMode = .loop
             } else {
                 isEmoji = true
@@ -1075,6 +1078,8 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             if let _ = telegramDice {
                 imageSize = displaySize
             } else if let telegramFile = telegramFile {
+                let scale = ExteraAppearance.stickerScale
+                let displaySize = CGSize(width: displaySize.width * scale, height: displaySize.height * scale)
                 if let dimensions = telegramFile.dimensions {
                     imageSize = dimensions.cgSize.aspectFitted(displaySize)
                 } else if let thumbnailSize = telegramFile.previewRepresentations.first?.dimensions {
@@ -1180,7 +1185,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             var dateReplies = 0
             var starsCount: Int64?
             var tonAmount: Int64?
-            var dateReactionsAndPeers = mergedMessageReactionsAndPeers(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.message)
+            var dateReactionsAndPeers = exteraVisibleReactions(accountPeerId: item.context.account.peerId, accountPeer: item.associatedData.accountPeer, message: item.message)
             if item.message.isRestricted(platform: "ios", contentSettings: item.context.currentContentSettings.with { $0 }) {
                 dateReactionsAndPeers = ([], [])
             }

@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import Intents
@@ -168,7 +169,7 @@ final class AuthorizedApplicationContext {
         
         self.context = context
 
-        self.showCallsTab = showCallsTab
+        self.showCallsTab = showCallsTab && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideCallsTab)
         self.showNewsTab = isNewsFeedEnabled(appConfiguration: context.currentAppConfiguration.with { $0 })
         
         self.notificationController = NotificationContainerController(context: context)
@@ -813,7 +814,10 @@ final class AuthorizedApplicationContext {
             }
             return value
         }
-        self.showCallsTabDisposable = (showCallsTabSignal |> deliverOnMainQueue).start(next: { [weak self] value in
+        self.showCallsTabDisposable = (combineLatest(showCallsTabSignal, ExteraSettingsStore.shared.changes)
+        |> map { value, _ in value && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideCallsTab) }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).start(next: { [weak self] value in
             if let strongSelf = self {
                 if strongSelf.showCallsTab != value {
                     strongSelf.showCallsTab = value

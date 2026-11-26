@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import AsyncDisplayKit
@@ -2015,7 +2016,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             enablePreview = false
         }
         
-        self.avatarNode.setStoryStats(storyStats: storyState.flatMap { storyState in
+        self.avatarNode.setStoryStats(storyStats: (ExteraSettingsStore.shared.value(for: ExteraPreferences.hideStories) ? nil : storyState).flatMap { storyState in
             return AvatarNode.StoryStats(
                 totalCount: storyState.stats.totalCount,
                 unseenCount: storyState.stats.unseenCount,
@@ -2178,7 +2179,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             } else if isForumAvatar {
                 avatarClipStyle = .roundedRect
             } else {
-                avatarClipStyle = .round
+                let fraction = ExteraAppearance.avatarCornerFraction
+                avatarClipStyle = fraction == 0.5 ? .round : .customRadius(fraction)
             }
 
             if item.useCommunityViewLayout {
@@ -3620,7 +3622,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 }
             }
             
-            if unreadCount.unread {
+            if unreadCount.unread && !ExteraAppearance.hidesUnreadCounters {
                 let badgeTextColor: UIColor
                 if unreadCount.muted {
                     if unreadCount.isProvisonal, case .forum = item.chatListLocation {
@@ -3787,7 +3789,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                 if let color = emojiStatus.color {
                                     currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                                 }
-                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hidePremiumBadges) {
                                 currentCredibilityIconContent = .premium(color: item.presentationData.theme.list.itemAccentColor)
                             }
                             
@@ -3818,7 +3820,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         if let color = emojiStatus.color {
                             currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                         }
-                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hidePremiumBadges) {
                         currentCredibilityIconContent = .premium(color: item.presentationData.theme.list.itemAccentColor)
                     }
                     
@@ -5645,7 +5647,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         // The side list ends without a closing separator.
                         strongSelf.separatorNode.isHidden = true
                     }
-                    strongSelf.separatorBaseIsHidden = strongSelf.separatorNode.isHidden
+                    strongSelf.separatorBaseIsHidden = strongSelf.separatorNode.isHidden || ExteraAppearance.hidesDividers
+                    strongSelf.separatorNode.isHidden = strongSelf.separatorBaseIsHidden
                     strongSelf.updateSideListSeparatorVisibility()
                     
                     transition.updateFrame(node: strongSelf.backgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: layout.contentSize.width, height: itemHeight)))

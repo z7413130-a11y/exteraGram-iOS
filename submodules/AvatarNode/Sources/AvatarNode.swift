@@ -39,10 +39,11 @@ public func generateSavedMessagesAvatarImage(size: CGSize) -> UIImage? {
     return generateAvatarImage(size: size, icon: savedMessagesIcon, iconScale: size.width / 60.0, color: .blue, customColors: AvatarNode.savedMessagesColors)
 }
 
-public enum AvatarNodeClipStyle {
+public enum AvatarNodeClipStyle: Equatable {
     case none
     case round
     case roundedRect
+    case customRadius(CGFloat)
     case bubble
 }
 
@@ -306,6 +307,9 @@ public func drawAvatarNodeContent(bounds: CGRect, parameters: Any?, isRasterizin
         } else if case .roundedRect = parameters.clipStyle {
             context.beginPath()
             context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: bounds.size.width, height: bounds.size.height), cornerRadius: floor(bounds.size.width * 0.25)).cgPath)
+            context.clip()
+        } else if case let .customRadius(fraction) = parameters.clipStyle {
+            context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: min(bounds.width, bounds.height) * fraction).cgPath)
             context.clip()
         } else if case .bubble = parameters.clipStyle {
             context.beginPath()
@@ -1024,6 +1028,9 @@ public final class AvatarNode: ASDisplayNode {
             case .roundedRect:
                 self.imageNode.clipsToBounds = true
                 self.imageNode.cornerRadius = displayDimensions.height * 0.25
+            case let .customRadius(fraction):
+                self.imageNode.clipsToBounds = true
+                self.imageNode.cornerRadius = min(displayDimensions.width, displayDimensions.height) * fraction
             case .bubble:
                 break
             }

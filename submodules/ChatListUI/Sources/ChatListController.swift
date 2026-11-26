@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import Postbox
@@ -287,6 +288,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     private var storyProgressDisposable: Disposable?
+    private var exteraAppearanceDisposable: Disposable?
     private var storySubscriptionsDisposable: Disposable?
     private var preloadStorySubscriptionsDisposable: Disposable?
     private var preloadStoryResourceDisposables: [MediaId: Disposable] = [:]
@@ -498,9 +500,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             }
         }
         
-        self.badgeDisposable = (combineLatest(renderedTotalUnreadCount(accountManager: context.sharedContext.accountManager, engine: context.engine), self.presentationDataValue.get()) |> deliverOnMainQueue).startStrict(next: { [weak self] count, presentationData in
+        self.badgeDisposable = (combineLatest(renderedTotalUnreadCount(accountManager: context.sharedContext.accountManager, engine: context.engine), self.presentationDataValue.get(), ExteraSettingsStore.shared.changes) |> deliverOnMainQueue).startStrict(next: { [weak self] count, presentationData, _ in
             if let strongSelf = self {
-                if count.0 == 0 {
+                if count.0 == 0 || ExteraAppearance.hidesUnreadCounters {
                     strongSelf.tabBarItem.badgeValue = ""
                     strongSelf.tabBarItem.accessibilityValue = nil
                 } else {
@@ -510,6 +512,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             }
         }).strict()
         
+        self.exteraAppearanceDisposable = (ExteraSettingsStore.shared.changes |> deliverOnMainQueue).start(next: { [weak self] _ in
+            guard let self, self.isNodeLoaded else { return }
+            self.requestLayout(transition: .immediate)
+        })
+
         self.presentationDataDisposable = (context.sharedContext.presentationData
         |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData in
             if let strongSelf = self {
@@ -868,6 +875,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.joinForumDisposable.dispose()
         self.actionDisposables.dispose()
         self.powerSavingMonitoringDisposable?.dispose()
+        self.exteraAppearanceDisposable?.dispose()
         self.storySubscriptionsDisposable?.dispose()
         self.storyArchiveSubscriptionsDisposable?.dispose()
         self.preloadStorySubscriptionsDisposable?.dispose()

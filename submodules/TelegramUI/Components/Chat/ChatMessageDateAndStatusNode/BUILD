@@ -12,6 +12,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/ExteraSettings",
         "//submodules/AsyncDisplayKit",
         "//submodules/TelegramCore",
         "//submodules/Display",

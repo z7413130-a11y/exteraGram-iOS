@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -314,7 +315,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                         titleCredibilityIcon = .scam
                                     } else if !hidePeerStatus, let emojiStatus = peer.emojiStatus {
                                         titleStatusIcon = .emojiStatus(emojiStatus)
-                                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hidePremiumBadges) {
                                         titleCredibilityIcon = .premium
                                     }
                                     

@@ -208,6 +208,11 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                             case .roundedRect:
                                 context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
                                 context.clip()
+                            case let .customRadius(fraction):
+                                let rect = CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset)
+                                let radius = min(rect.width, rect.height) * fraction
+                                context.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
+                                context.clip()
                             case .bubble:
                                 let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
                                 context.translateBy(x: rect.midX, y: rect.midY)
@@ -267,7 +272,7 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                                     context.setBlendMode(.destinationOut)
                                     context.draw(roundCorners.cgImage!, in: CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset))
                                 }
-                            case .roundedRect:
+                            case .roundedRect, .customRadius:
                                 break
                             case .bubble:
                                 break
@@ -284,6 +289,11 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                                 case .roundedRect:
                                     context.beginPath()
                                     context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
+                                    context.fillPath()
+                                case let .customRadius(fraction):
+                                    let rect = CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset)
+                                    let radius = min(rect.width, rect.height) * fraction
+                                    context.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
                                     context.fillPath()
                                 case .bubble:
                                     let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
@@ -310,6 +320,11 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                         case .roundedRect:
                             context.beginPath()
                             context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
+                            context.fillPath()
+                        case let .customRadius(fraction):
+                            let rect = CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset)
+                            let radius = min(rect.width, rect.height) * fraction
+                            context.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
                             context.fillPath()
                         case .bubble:
                             let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
@@ -358,6 +373,11 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                             case .roundedRect:
                                 context.beginPath()
                                 context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
+                                context.fillPath()
+                            case let .customRadius(fraction):
+                                let rect = CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset)
+                                let radius = min(rect.width, rect.height) * fraction
+                                context.addPath(UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath)
                                 context.fillPath()
                             case .bubble:
                                 let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
