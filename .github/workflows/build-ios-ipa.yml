@@ -72,6 +72,34 @@ jobs:
           if git submodule status --recursive | grep -E '^[-+U]'; then exit 1; fi
           df -h "$GITHUB_WORKSPACE"
 
+      - name: Prepare pinned iOS bundling rules for deferred signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          rules=build-system/bazel-rules/rules_apple
+          test "$(git -C "$rules" rev-parse HEAD)" = '485016eb5b0948cc17307064e7977a6d68e94046'
+          grep -q 'disable_legacy_signing' "$rules/apple/internal/codesigning_support.bzl"
+          python3 - "$rules/apple/internal/ios_rules.bzl" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          rules = path.read_text().split('\ndef ')
+          guard = '    if platform_prerequisites.platform.is_device:'
+          anchor = guard + '\n        processor_partials.append(\n            partials.provisioning_profile_partial('
+          replacement = ('    # Embed a profile when provided, or let normal device signing require one.\n'
+                         '    if platform_prerequisites.platform.is_device and (\n'
+                         '        provisioning_profile or "disable_legacy_signing" not in features\n'
+                         '    ):')
+          for name in ('_ios_application_impl', '_ios_extension_impl'):
+              matches = [index for index, rule in enumerate(rules) if rule.startswith(name + '(ctx):\n')]
+              if len(matches) != 1 or rules[matches[0]].count(anchor) != 1:
+                  sys.exit(f'Unexpected provisioning-profile logic in pinned rules_apple: {name}')
+              index = matches[0]
+              rules[index] = rules[index].replace(anchor, replacement + anchor[len(guard):], 1)
+          path.write_text('\ndef '.join(rules))
+          PY
+
       - name: Configure uninstalled device archive and resource limits
         shell: bash
         env:
@@ -80,8 +108,6 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          # Require the pinned rules_apple's existing deferred-signing support. Do not patch signing validation.
-          grep -q 'disable_legacy_signing' build-system/bazel-rules/rules_apple/apple/internal/codesigning_support.bzl
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -108,16 +134,18 @@ jobs:
           build --repository_cache=
           build --//Telegram:disableProvisioningProfiles=true
           build --features=disable_legacy_signing
+          build --output_groups=+dossier
           build --curses=no
           build --color=no
           EOF
           echo 'Packaging is deferred-signing only; no device installation or modified entitlements.'
 
-      - name: Compile complete ARM64 iPhone target for subsequent standard signing
+      - name: Prepare redacted Bazel build driver
         shell: bash
         run: |
           set -euo pipefail
-          python3 -u - <<'PY'
+          umask 077
+          cat > "$RUNNER_TEMP/device-build.py" <<'PY'
           import base64, json, os, re, subprocess, sys
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'])
@@ -128,17 +156,37 @@ jobs:
               masks.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
           cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN'], 'build',
                  '--configurationPath', str(path), '--xcodeManagedCodesigning', '--buildNumber', '2', '--configuration', 'debug_arm64']
-          proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
-          for line in proc.stdout:
-              if re.search(r'(?i)\b(?:telegram_|app_config_)?api_?(?:id|hash)\b', line):
-                  print('[configuration-related line redacted]', flush=True)
-                  continue
-              for value in sorted(masks, key=len, reverse=True):
-                  line = line.replace(value, '[redacted]')
-              line = re.sub(r'(?i)\b[0-9a-f]{32}\b', '[redacted-hex]', line)
-              print(line, end='', flush=True)
-          sys.exit(proc.wait())
+          mode = sys.argv[1]
+          if mode not in ('analysis', 'build'):
+              sys.exit('Expected analysis or build mode.')
+          rc = Path.home() / '.bazelrc'
+          previous_rc = rc.read_bytes()
+          try:
+              if mode == 'analysis':
+                  rc.write_bytes(previous_rc + b'\nbuild --nobuild\nbuild --keep_going\n')
+              proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+              for line in proc.stdout:
+                  if re.search(r'(?i)\b(?:telegram_|app_config_)?api_?(?:id|hash)\b', line):
+                      print('[configuration-related line redacted]', flush=True)
+                      continue
+                  for value in sorted(masks, key=len, reverse=True):
+                      line = line.replace(value, '[redacted]')
+                  line = re.sub(r'(?i)\b[0-9a-f]{32}\b', '[redacted-hex]', line)
+                  print(line, end='', flush=True)
+              status = proc.wait()
+          finally:
+              if mode == 'analysis':
+                  rc.write_bytes(previous_rc)
+          sys.exit(status)
           PY
+
+      - name: Analyze complete ARM64 iPhone target (no compilation)
+        shell: bash
+        run: python3 -u "$RUNNER_TEMP/device-build.py" analysis
+
+      - name: Compile complete ARM64 iPhone target for subsequent standard signing
+        shell: bash
+        run: python3 -u "$RUNNER_TEMP/device-build.py" build
 
       - name: Audit actual IPA structure, extensions, platform and minimum iOS
         shell: bash
@@ -181,8 +229,8 @@ jobs:
               executable = bundle / info['CFBundleExecutable']
               if not executable.is_file(): sys.exit('Missing bundle executable')
               records.append({'id': identifier, 'file': str(executable.relative_to(app)), 'minimum_ios': info.get('MinimumOSVersion'), 'extension_point': info.get('NSExtension', {}).get('NSExtensionPointIdentifier')})
-          if not wanted <= found:
-              sys.exit('Missing required extensions: ' + ', '.join(sorted(wanted - found)))
+          if found != wanted or len(bundles) != len(wanted) + 1:
+              sys.exit(f'Unexpected extension inventory: missing={sorted(wanted - found)}, extra={sorted(found - wanted)}')
           if any(app.rglob('embedded.mobileprovision')):
               sys.exit('Unexpected embedded provisioning profile in deferred-signing archive')
           magic = {b'\xcf\xfa\xed\xfe',b'\xfe\xed\xfa\xcf',b'\xce\xfa\xed\xfe',b'\xfe\xed\xfa\xce',b'\xca\xfe\xba\xbe',b'\xbe\xba\xfe\xca',b'\xca\xfe\xba\xbf',b'\xbf\xba\xfe\xca'}
@@ -266,6 +314,11 @@ jobs:
           output="$RUNNER_TEMP/exteragram-0.0.2-iphone.ipa.cms"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$ipa" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$output"
+          dossier=bazel-bin/Telegram/Telegram_dossier.zip
+          dossier_output="$RUNNER_TEMP/exteragram-0.0.2-signing-dossier.zip.cms"
+          test -s "$dossier"
+          openssl cms -encrypt -aes256 -binary -outform DER -in "$dossier" -out "$dossier_output" "$RUNNER_TEMP/artifact-recipient.pem"
+          test -s "$dossier_output"
           shasum -a 256 "$output" | awk '{print $1}' > "$RUNNER_TEMP/ipa-encrypted.sha256"
           echo 'Encrypted IPA ready; plaintext is not uploaded.'
 
@@ -275,6 +328,7 @@ jobs:
           name: exteraGram-iOS-Port-0.0.2-ARM64-private-test
           path: |
             ${{ runner.temp }}/exteragram-0.0.2-iphone.ipa.cms
+            ${{ runner.temp }}/exteragram-0.0.2-signing-dossier.zip.cms
             ${{ runner.temp }}/ipa-report.json
             ${{ runner.temp }}/ipa-encrypted.sha256
           if-no-files-found: error
@@ -285,7 +339,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/device-configuration.json" "$GITHUB_WORKSPACE/build-input/configuration-repository/variables.bzl"
+          rm -f "$RUNNER_TEMP/device-configuration.json" "$RUNNER_TEMP/device-build.py" "$GITHUB_WORKSPACE/build-input/configuration-repository/variables.bzl"
           rm -rf "$RUNNER_TEMP/device-audit"
           df -h "$GITHUB_WORKSPACE"
           vm_stat
