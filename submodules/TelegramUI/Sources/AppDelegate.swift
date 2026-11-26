@@ -77,8 +77,10 @@ private struct AppSystemCapabilities {
     let configuration: BuildConfig
 
     var canUseSiri: Bool {
+        // Enable only for a distribution configuration intended for Siri.
+        // Localized strings cannot opt a bundle in on their own.
         guard configuration.isSiriEnabled,
-              let usage = bundle.object(forInfoDictionaryKey: "NSSiriUsageDescription") as? String else {
+              let usage = bundle.infoDictionary?["NSSiriUsageDescription"] as? String else {
             return false
         }
         return !usage.isEmpty
@@ -1052,6 +1054,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 StartupJournal.mark(.siriUnavailable)
                 return .denied
             }
+            // Intents can terminate the process inside its entitlement check on
+            // iOS 16. Keep the capability check before entering the framework.
             StartupJournal.mark(.siriStatusCheck)
             guard let status = INSiriAuthorizationStatus(rawValue: buildConfig.safeSiriAuthorizationStatus()) else {
                 StartupJournal.mark(.siriUnavailable)
