@@ -2029,6 +2029,19 @@ ios_ui_test_suite(
 
 # Temporary targets used to simplify build tests
 
+# This small executable keeps the existing iOS WebRTC build target linkable
+# when warming the compilation cache with a public build configuration.
+genrule(
+    name = "webrtc_build_test_main_source",
+    outs = ["webrtc_build_test_main.m"],
+    cmd = "echo 'int main(void) { return 0; }' > $@",
+)
+
+objc_library(
+    name = "webrtc_build_test_main",
+    srcs = [":webrtc_build_test_main_source"],
+)
+
 ios_application(
     name = "webrtc_build_test",
     bundle_id = "{telegram_bundle_id}".format(
@@ -2049,6 +2062,7 @@ ios_application(
         ":UrlTypesInfoPlist",
     ],
     deps = [
+        ":webrtc_build_test_main",
         "//third-party/webrtc",
         "//third-party/webrtc:webrtc_objc",
     ],
