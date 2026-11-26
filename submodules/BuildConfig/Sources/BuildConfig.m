@@ -1,4 +1,8 @@
 #import <BuildConfig/BuildConfig.h>
+#import <Intents/INPreferences.h>
+#include <stdatomic.h>
+
+static atomic_bool siriServiceUnavailable;
 
 #include <errno.h>
 #include <fcntl.h>
@@ -195,6 +199,42 @@ API_AVAILABLE(ios(10))
 
 - (bool)isSiriEnabled {
     return APP_CONFIG_IS_SIRI_ENABLED;
+}
+
+- (NSInteger)safeSiriAuthorizationStatus {
+    if (!self.isSiriEnabled) {
+        return -1;
+    }
+    @synchronized ([BuildConfig class]) {
+        if (atomic_load(&siriServiceUnavailable)) {
+            return -1;
+        }
+        @try {
+            return [INPreferences siriAuthorizationStatus];
+        } @catch (NSException *exception) {
+            (void)exception;
+            // Older iOS versions can raise an Objective-C exception if the final
+            // signature has lost the capability. Keep it from unwinding into Swift.
+            atomic_store(&siriServiceUnavailable, true);
+            return -1;
+        }
+    }
+}
+
+- (void)safeRequestSiriAuthorization:(void (^)(BOOL))completion {
+    if ([self safeSiriAuthorizationStatus] < 0) {
+        completion(NO);
+        return;
+    }
+    @try {
+        [INPreferences requestSiriAuthorization:^(INSiriAuthorizationStatus status) {
+            completion(status == INSiriAuthorizationStatusAuthorized);
+        }];
+    } @catch (NSException *exception) {
+        (void)exception;
+        atomic_store(&siriServiceUnavailable, true);
+        completion(NO);
+    }
 }
 
 + (NSString * _Nullable)bundleSeedId {
