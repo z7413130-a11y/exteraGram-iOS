@@ -149,3 +149,55 @@ public final class CrashReportStore {
         }
     }
 }
+
+/// An app-private, bounded journal of fixed startup markers. Keeping the marker
+/// set typed prevents account, authorization and system error text from entering it.
+public enum StartupJournal {
+    public enum Event: String {
+        case started, windowCreated, sharedStorageSelected, privateStorageSelected
+        case storageUnavailable, keychainReady, keychainUnavailable, storageReady
+        case accountManagerStarting, accountManagerReady, sharedContextReady
+        case authorizationScreen, accountContextReady, accountScreen
+        case siriUnavailable, siriStatusCheck, siriStatusReturned, siriRequest, siriRequestReturned
+        case pushRegistrationFailed
+    }
+
+    private static let lock = NSLock()
+    private static let maximumSize = 32 * 1024
+    private static let file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        .appendingPathComponent("exteragram-diagnostics", isDirectory: true)
+        .appendingPathComponent("startup-journal.txt")
+
+    public static func mark(_ event: Event) {
+        guard let file else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            let directory = file.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var data = (try? Data(contentsOf: file)) ?? Data()
+            let line = Data("\(Int(Date().timeIntervalSince1970)) \(event.rawValue)\n".utf8)
+            if data.count + line.count > maximumSize {
+                let tail = data.suffix(maximumSize / 2)
+                if let firstNewline = tail.firstIndex(of: 0x0a) {
+                    data = Data(tail.suffix(from: tail.index(after: firstNewline)))
+                } else {
+                    data.removeAll()
+                }
+            }
+            data.append(line)
+            #if os(iOS)
+            try data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            #else
+            try data.write(to: file, options: .atomic)
+            #endif
+        } catch {
+            // Diagnostics must never block startup, including with protected data locked.
+        }
+    }
+
+    public static func exportFile() -> URL? {
+        guard let file, FileManager.default.isReadableFile(atPath: file.path) else { return nil }
+        return file
+    }
+}
