@@ -1,4 +1,4 @@
-name: exteraGram iOS Port 0.0.3 - Device archive for later signing
+name: exteraGram iOS Port 0.0.4 - Device archive for later signing
 
 on:
   workflow_dispatch:
@@ -16,7 +16,8 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 330
     env:
-      PORT_VERSION: '0.0.3'
+      PORT_VERSION: '0.0.4'
+      PORT_BUILD_NUMBER: '4'
       IOS_BUNDLE_ID: 'org.exteragram.iosport'
     steps:
       - name: Validate API secrets without printing their values
@@ -61,6 +62,7 @@ jobs:
           echo "BAZEL_BIN=$bazel_bin" >> "$GITHUB_ENV"
 
       - name: Load pinned submodules recursively
+        id: submodules
         shell: bash
         run: |
           set -euo pipefail
@@ -70,7 +72,17 @@ jobs:
           git submodule update --init --recursive --depth 1 --jobs 2
           git submodule status --recursive
           if git submodule status --recursive | grep -E '^[-+U]'; then exit 1; fi
+          fingerprint=$(git submodule status --recursive | awk '{print $1, $2}' | shasum -a 256 | awk '{print $1}')
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
           df -h "$GITHUB_WORKSPACE"
+
+      - name: Restore Bazel checksummed public downloads
+        id: bazel-downloads
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/bazel-repository-cache/content_addressable/sha256
+          key: bazel-downloads-v1-${{ runner.os }}-${{ runner.arch }}-bazel-9.2.0-xcode-27.1-${{ hashFiles('versions.json', 'MODULE.bazel', 'MODULE.bazel.lock', 'WORKSPACE', '.gitmodules', 'build-system/bazel-patches/**') }}-${{ steps.submodules.outputs.fingerprint }}
 
       - name: Prepare pinned iOS bundling rules for deferred signing
         shell: bash
@@ -115,7 +127,7 @@ jobs:
           # No real signing team is assigned at compilation time; the installed app requires valid signing.
           config.update(bundle_id=os.environ['IOS_BUNDLE_ID'], team_id='0000000000',
                         api_id=os.environ['TELEGRAM_API_ID'], api_hash=os.environ['TELEGRAM_API_HASH'],
-                        is_internal_build='false', is_appstore_build='false', enable_siri=True, enable_icloud=True)
+                        is_internal_build='false', is_appstore_build='false', enable_siri=True, enable_icloud=False)
           Path(os.environ['RUNNER_TEMP'], 'device-configuration.json').write_text(json.dumps(config))
           path = Path('versions.json')
           versions = json.loads(path.read_text())
@@ -131,14 +143,15 @@ jobs:
           build --worker_max_instances=1
           build --worker_max_multiplex_instances=1
           build --discard_analysis_cache
-          build --repository_cache=
           build --//Telegram:disableProvisioningProfiles=true
           build --features=disable_legacy_signing
-          build --output_groups=+dossier
+          build --apple_generate_dsym
+          build --output_groups=+dossier,+dsyms
           build --curses=no
           build --color=no
           EOF
-          echo 'Packaging is deferred-signing only; no device installation or modified entitlements.'
+          printf 'build --repository_cache=%s\n' "$RUNNER_TEMP/bazel-repository-cache" >> "$HOME/.bazelrc"
+          echo 'The device archive uses the network and local authorization paths without iCloud.'
 
       - name: Prepare redacted Bazel build driver
         shell: bash
@@ -155,7 +168,7 @@ jobs:
           for value in (config['api_id'], config['api_hash']):
               masks.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
           cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN'], 'build',
-                 '--configurationPath', str(path), '--xcodeManagedCodesigning', '--buildNumber', '3', '--configuration', 'debug_arm64']
+                 '--configurationPath', str(path), '--xcodeManagedCodesigning', '--buildNumber', os.environ['PORT_BUILD_NUMBER'], '--configuration', 'debug_arm64']
           mode = sys.argv[1]
           if mode not in ('analysis', 'build'):
               sys.exit('Expected analysis or build mode.')
@@ -183,6 +196,29 @@ jobs:
       - name: Analyze complete ARM64 iPhone target (no compilation)
         shell: bash
         run: python3 -u "$RUNNER_TEMP/device-build.py" analysis
+
+      - name: Check public download cache size
+        id: bazel-download-budget
+        if: steps.bazel-downloads.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/bazel-repository-cache/content_addressable/sha256"
+          if [[ -d "$cache" ]]; then
+            size_kib=$(du -sk "$cache" | cut -f1)
+            echo "Bazel public download cache: ${size_kib} KiB"
+            if (( size_kib <= 3 * 1024 * 1024 )); then
+              echo 'save=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Save only checksummed public downloads
+        if: steps.bazel-download-budget.outputs.save == 'true' && steps.bazel-downloads.outputs.cache-primary-key != ''
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/bazel-repository-cache/content_addressable/sha256
+          key: ${{ steps.bazel-downloads.outputs.cache-primary-key }}
 
       - name: Compile complete ARM64 iPhone target for subsequent standard signing
         shell: bash
@@ -220,8 +256,10 @@ jobs:
               info = read_plist(bundle / 'Info.plist')
               identifier = info['CFBundleIdentifier']
               if bundle == app:
-                  if identifier != base or info['CFBundleShortVersionString'] != os.environ['PORT_VERSION']:
-                      sys.exit('Unexpected main bundle ID or version')
+                  if identifier != base or info['CFBundleShortVersionString'] != os.environ['PORT_VERSION'] or info['CFBundleVersion'] != os.environ['PORT_BUILD_NUMBER']:
+                      sys.exit('Unexpected main bundle ID, version or build number')
+                  if 'TelegramCloudKitContainer' in info:
+                      sys.exit('Unexpected CloudKit opt-in in the deferred-signing IPA')
               else:
                   if not info.get('NSExtension', {}).get('NSExtensionPointIdentifier'):
                       sys.exit('An extension has no extension point identifier')
@@ -264,7 +302,7 @@ jobs:
           if not expected_frameworks <= framework_ids:
               sys.exit('Missing required core frameworks: ' + ', '.join(sorted(expected_frameworks - framework_ids)))
           effective_min = max(minimums, key=version_tuple)
-          report = {'port_version':os.environ['PORT_VERSION'],'bundle_id':base,'archive_kind':'uninstalled device archive; standard signing required',
+          report = {'port_version':os.environ['PORT_VERSION'],'build_number':os.environ['PORT_BUILD_NUMBER'],'bundle_id':base,'archive_kind':'uninstalled device archive; standard signing required',
                     'main_and_extensions':records,'extensions_count':len(bundles)-1,'frameworks':frameworks,'mach_o_count':len(binaries),'mach_o':binaries,
                     'maximum_declared_minos_across_bundled_binaries':effective_min,'ios_15_metadata_compatible':version_tuple(effective_min) <= (15,0,0),
                     'profile_embedded':False,'runtime_tested':False,
@@ -311,11 +349,11 @@ jobs:
           PEM
           openssl x509 -in "$RUNNER_TEMP/artifact-recipient.pem" -noout -fingerprint -sha256 | grep -F '82:4A:0B:19:A1:E8:67:01:08:3B:C8:13:6E:58:8B:50:D5:84:CF:7A:7E:F1:4A:5B:E8:56:32:93:78:27:16:44'
           ipa=bazel-bin/Telegram/Telegram.ipa
-          output="$RUNNER_TEMP/exteragram-0.0.3-iphone.ipa.cms"
+          output="$RUNNER_TEMP/exteragram-0.0.4-iphone.ipa.cms"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$ipa" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$output"
           dossier=bazel-bin/Telegram/Telegram_dossier.zip
-          dossier_output="$RUNNER_TEMP/exteragram-0.0.3-signing-dossier.zip.cms"
+          dossier_output="$RUNNER_TEMP/exteragram-0.0.4-signing-dossier.zip.cms"
           test -s "$dossier"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$dossier" -out "$dossier_output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$dossier_output"
@@ -325,15 +363,79 @@ jobs:
       - name: Upload encrypted IPA and non-secret build report
         uses: actions/upload-artifact@v7
         with:
-          name: exteraGram-iOS-Port-0.0.3-ARM64-private-test
+          name: exteraGram-iOS-Port-0.0.4-ARM64-private-test
           path: |
-            ${{ runner.temp }}/exteragram-0.0.3-iphone.ipa.cms
-            ${{ runner.temp }}/exteragram-0.0.3-signing-dossier.zip.cms
+            ${{ runner.temp }}/exteragram-0.0.4-iphone.ipa.cms
+            ${{ runner.temp }}/exteragram-0.0.4-signing-dossier.zip.cms
             ${{ runner.temp }}/ipa-report.json
             ${{ runner.temp }}/ipa-encrypted.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
+
+      - name: Match dSYM UUIDs to the IPA and encrypt debug symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          symbols="$RUNNER_TEMP/exteragram-0.0.4-dsyms.zip"
+          trap 'rm -f "$symbols"' EXIT
+          python3 - "$symbols" <<'PY'
+          import json, os, plistlib, re, subprocess, sys, zipfile
+          from pathlib import Path
+
+          def arm64_uuid(path):
+              output = subprocess.check_output(['xcrun', 'dwarfdump', '--uuid', str(path)], text=True)
+              match = re.search(r'UUID: ([0-9A-Fa-f-]+) \(arm64\)', output)
+              return match.group(1).upper() if match else None
+
+          temp = Path(os.environ['RUNNER_TEMP'])
+          app, = (temp / 'device-audit' / 'Payload').glob('*.app')
+          report = json.loads((temp / 'ipa-report.json').read_text())
+          binary_uuids = {}
+          for item in report['mach_o']:
+              relative = item['path']
+              uuid = arm64_uuid(app / relative)
+              if uuid:
+                  binary_uuids[relative] = uuid
+
+          expected = set(binary_uuids.values())
+          matches = {}
+          for dsym in sorted(Path('bazel-bin').resolve().rglob('*.dSYM')):
+              for dwarf in sorted((dsym / 'Contents' / 'Resources' / 'DWARF').glob('*')):
+                  if not dwarf.is_file():
+                      continue
+                  uuid = arm64_uuid(dwarf)
+                  if uuid in expected:
+                      matches.setdefault(uuid, dsym)
+
+          with (app / 'Info.plist').open('rb') as f:
+              main = plistlib.load(f)['CFBundleExecutable']
+          core = 'Frameworks/TelegramCoreFramework.framework/TelegramCoreFramework'
+          for binary in (main, core):
+              if binary_uuids.get(binary) not in matches:
+                  sys.exit('Missing matching dSYM for ' + binary)
+
+          with zipfile.ZipFile(sys.argv[1], 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=3) as archive:
+              for uuid, dsym in sorted(matches.items()):
+                  for member in sorted(dsym.rglob('*')):
+                      if member.is_file() and not member.is_symlink():
+                          archive.write(member, Path(uuid, dsym.name, member.relative_to(dsym)))
+              archive.writestr('ipa-dsym-uuids.json', json.dumps({p: value for p, value in binary_uuids.items() if value in matches}, indent=2) + '\n')
+          print(f'Validated {len(matches)} dSYM UUIDs, including Telegram and TelegramCoreFramework.')
+          PY
+          output="$symbols.cms"
+          openssl cms -encrypt -aes256 -binary -outform DER -in "$symbols" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
+          test -s "$output"
+
+      - name: Upload encrypted dSYMs for crash symbolication
+        uses: actions/upload-artifact@v7
+        with:
+          name: exteraGram-iOS-Port-0.0.4-ARM64-symbols-encrypted
+          path: ${{ runner.temp }}/exteragram-0.0.4-dsyms.zip.cms
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
 
       - name: Final diagnostics and clean temporary credential inputs
         if: always()
