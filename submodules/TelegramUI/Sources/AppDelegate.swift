@@ -72,6 +72,28 @@ private func launchStorageBaseURL(appGroupURL: URL?, fileManager: FileManager) t
     return privateURL
 }
 
+private struct AppSystemCapabilities {
+    let bundle: Bundle
+    let configuration: BuildConfig
+
+    var canUseSiri: Bool {
+        guard configuration.isSiriEnabled,
+              let usage = bundle.object(forInfoDictionaryKey: "NSSiriUsageDescription") as? String else {
+            return false
+        }
+        return !usage.isEmpty
+    }
+
+    var canUseICloud: Bool {
+        return configuration.isICloudEnabled
+    }
+
+    func permitsBackgroundTask(_ identifier: String) -> Bool {
+        let identifiers = bundle.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
+        return identifiers.contains(identifier)
+    }
+}
+
 private let handleVoipNotifications = false
 
 private func isTonTransferUrl(_ url: URL) -> Bool {
@@ -363,6 +385,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         precondition(!testIsLaunched)
         testIsLaunched = true
         os_log("launch.started", log: appStartupLog, type: .default)
+        StartupJournal.mark(.started)
         CrashReportCollector.shared.start()
         
         let _ = voipTokenPromise.get().start(next: { token in
@@ -461,6 +484,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         self.window = window
         self.nativeWindow = window
         os_log("launch.window.created", log: appStartupLog, type: .default)
+        StartupJournal.mark(.windowCreated)
         
         hostView.containerView.layer.addSublayer(MetalEngine.shared.rootLayer)
         // On the first start after an update, compile the pipelines that would otherwise stall their first use.
@@ -586,8 +610,10 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let isPrivateStorage = appGroupURL == nil
         if isPrivateStorage {
             os_log("launch.app-group.unavailable", log: appStartupLog, type: .default)
+            StartupJournal.mark(.privateStorageSelected)
         } else {
             os_log("launch.app-group.available", log: appStartupLog, type: .default)
+            StartupJournal.mark(.sharedStorageSelected)
         }
 
         let storageBaseURL: URL
@@ -595,6 +621,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             storageBaseURL = try launchStorageBaseURL(appGroupURL: appGroupURL, fileManager: fileManager)
         } catch {
             os_log("launch.private-storage.failed", log: appStartupLog, type: .error)
+            StartupJournal.mark(.storageUnavailable)
             self.launchStorageUnavailable = true
             return true
         }
@@ -606,15 +633,18 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             if isPrivateStorage {
                 _ = try PasscodeEnvironment.shared.privateAccessGroup()
                 os_log("launch.private-keychain.resolved", log: appStartupLog, type: .default)
+                StartupJournal.mark(.keychainReady)
             }
         } catch {
             os_log("launch.keychain.configuration-failed", log: appStartupLog, type: .error)
+            StartupJournal.mark(.keychainUnavailable)
             self.launchStorageUnavailable = true
             return true
         }
         
         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
         self.buildConfig = buildConfig
+        let capabilities = AppSystemCapabilities(bundle: .main, configuration: buildConfig)
         let signatureDict = BuildConfigExtra.signatureDict()
         
         let apiId: Int32 = buildConfig.apiId
@@ -727,7 +757,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             encryptionProvider: OpenSSLEncryptionProvider(),
             deviceModelName: nil,
             useBetaFeatures: !buildConfig.isAppStoreBuild,
-            isICloudEnabled: buildConfig.isICloudEnabled,
+            isICloudEnabled: capabilities.canUseICloud,
             // Only the main app passes a factory: extensions stay on MtProtoKit. Whether the Rust
             // engine runs is decided per account by resolveNetworkEngine (Debug Settings switch,
             // mtproto_engine_rust_disabled, the factory's own declines).
@@ -771,6 +801,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         os_log("launch.storage.selected", log: appStartupLog, type: .default)
+        StartupJournal.mark(.storageReady)
         
         let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
         let encryptionParameters = ValueBoxEncryptionParameters(forceEncryptionIfNoSet: false, key: ValueBoxEncryptionParameters.Key(data: deviceSpecificEncryptionParameters.key)!, salt: ValueBoxEncryptionParameters.Salt(data: deviceSpecificEncryptionParameters.salt)!)
@@ -1006,34 +1037,35 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 }
             })
         }, requestSiriAuthorization: { completion in
-            if #available(iOS 10, *) {
-                INPreferences.requestSiriAuthorization { status in
-                    if case .authorized = status {
-                        completion(true)
-                    } else {
-                        completion(false)
-                    }
-                }
-            } else {
+            guard capabilities.canUseSiri else {
+                StartupJournal.mark(.siriUnavailable)
                 completion(false)
+                return
+            }
+            StartupJournal.mark(.siriRequest)
+            buildConfig.safeRequestSiriAuthorization { granted in
+                StartupJournal.mark(.siriRequestReturned)
+                completion(granted)
             }
         }, siriAuthorization: {
-            if buildConfig.isSiriEnabled {
-                if #available(iOS 10, *) {
-                    switch INPreferences.siriAuthorizationStatus() {
-                    case .authorized:
-                        return .allowed
-                    case .denied, .restricted:
-                        return .denied
-                    case .notDetermined:
-                        return .notDetermined
-                    @unknown default:
-                        return .notDetermined
-                    }
-                } else {
-                    return .denied
-                }
-            } else {
+            guard capabilities.canUseSiri else {
+                StartupJournal.mark(.siriUnavailable)
+                return .denied
+            }
+            StartupJournal.mark(.siriStatusCheck)
+            guard let status = INSiriAuthorizationStatus(rawValue: buildConfig.safeSiriAuthorizationStatus()) else {
+                StartupJournal.mark(.siriUnavailable)
+                return .denied
+            }
+            StartupJournal.mark(.siriStatusReturned)
+            switch status {
+            case .authorized:
+                return .allowed
+            case .denied, .restricted:
+                return .denied
+            case .notDetermined:
+                return .notDetermined
+            @unknown default:
                 return .denied
             }
         }, getWindowHost: {
@@ -1106,11 +1138,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         })
         
         os_log("launch.account-manager.initializing", log: appStartupLog, type: .default)
+        StartupJournal.mark(.accountManagerStarting)
         let accountManager: AccountManager<TelegramAccountManagerTypes> = setupAccountManager(basePath: rootPath + "/accounts-metadata", isTemporary: false, isReadOnly: false, useCaches: true, removeDatabaseOnError: true, resetLocalSecrets: {
             try resetWalletLocalSecrets()
         })
         self.accountManager = accountManager
         os_log("launch.account-manager.initialized", log: appStartupLog, type: .default)
+        StartupJournal.mark(.accountManagerReady)
 
         telegramUIDeclareEncodables()
         initializeAccountManagement()
@@ -1328,6 +1362,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             Logger.shared.redactSensitiveData = loggingSettings.redactSensitiveData
             
             os_log("launch.shared-context.ready", log: appStartupLog, type: .default)
+            StartupJournal.mark(.sharedContextReady)
             return .single(sharedApplicationContext)
         })
             
@@ -1459,6 +1494,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             self.crashReportPromptDisposable.set(nil)
             self.contextValue = context
             if let context = context {
+                StartupJournal.mark(.accountContextReady)
                 setupLegacyComponents(context: context.context)
                 let isReady = context.isReady.get()
                 contextReadyDisposable.set((isReady
@@ -1473,6 +1509,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
                     self.mainWindow.debugAction = nil
                     self.mainWindow.viewController = context.rootController
+                    StartupJournal.mark(.accountScreen)
                     
                     #if DEBUG
                     if firstTime {
@@ -1570,6 +1607,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 |> deliverOnMainQueue).start(next: { _ in
                     progressDisposable.dispose()
                     os_log("launch.authorization-ui.presenting", log: appStartupLog, type: .default)
+                    StartupJournal.mark(.authorizationScreen)
                     self.mainWindow.present(context.rootController, on: .root)
                 }))
             } else {
@@ -1683,8 +1721,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         self.maybeCheckForUpdates()
         
-        if #available(iOS 13.0, *) {
-            let cleanupTaskId = "\(baseAppBundleId).cleanup"
+        let cleanupTaskId = "\(baseAppBundleId).cleanup"
+        if #available(iOS 13.0, *), capabilities.permitsBackgroundTask(cleanupTaskId) {
             
             BGTaskScheduler.shared.register(forTaskWithIdentifier: cleanupTaskId, using: DispatchQueue.main) { task in
                 Logger.shared.log("App \(self.episodeId)", "Executing cleanup task")
@@ -2241,6 +2279,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        StartupJournal.mark(.pushRegistrationFailed)
         Logger.shared.log("App \(self.episodeId)", "register for notifications: didFailToRegisterForRemoteNotificationsWithError (error: \(error))")
     }
     
