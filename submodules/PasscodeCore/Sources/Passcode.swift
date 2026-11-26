@@ -14,12 +14,14 @@ public struct PasscodeConfiguration: Equatable, Sendable {
     public let processRole: ProcessRole
     public let biometricKeychainService: String?
     public let keychainScope: String?
+    public let useAppPrivateKeychain: Bool
 
-    public init(appGroupIdentifier: String, processRole: ProcessRole, biometricKeychainService: String? = nil, keychainScope: String? = nil) {
+    public init(appGroupIdentifier: String, processRole: ProcessRole, biometricKeychainService: String? = nil, keychainScope: String? = nil, useAppPrivateKeychain: Bool = false) {
         self.appGroupIdentifier = appGroupIdentifier
         self.processRole = processRole
         self.biometricKeychainService = biometricKeychainService
         self.keychainScope = keychainScope
+        self.useAppPrivateKeychain = useAppPrivateKeychain
     }
 }
 
@@ -52,6 +54,7 @@ public final class PasscodeEnvironment: @unchecked Sendable {
             return
         }
         guard configuration.processRole != .mainApp || privateAccessGroup != nil else { throw PasscodeError.unavailable }
+        guard !configuration.useAppPrivateKeychain || configuration.processRole == .mainApp else { throw PasscodeError.unavailable }
         self.configuration = configuration
         self.resolvePrivateAccessGroup = privateAccessGroup
     }
@@ -73,7 +76,25 @@ public final class PasscodeEnvironment: @unchecked Sendable {
         self.mutex.lock()
         defer { self.mutex.unlock() }
         guard let configuration = self.configuration else { throw PasscodeError.unavailable }
+        if configuration.useAppPrivateKeychain {
+            return try self.privateAccessGroupLocked(configuration: configuration)
+        }
         return configuration.appGroupIdentifier
+    }
+
+    public func scopedKeychainService(_ service: String) -> String {
+        #if os(macOS)
+        return PasscodeKeychainScope.service(service, environment: self)
+        #else
+        self.mutex.lock()
+        defer { self.mutex.unlock() }
+        // Wallet items already use the private access group in shared mode. Keep their
+        // service names separate so a fresh local database cannot reset existing wallets.
+        if self.configuration?.useAppPrivateKeychain == true {
+            return "org.telegram.scoped.app-private/" + service
+        }
+        return service
+        #endif
     }
 
     func biometricKeychainService() throws -> String {
@@ -90,6 +111,10 @@ public final class PasscodeEnvironment: @unchecked Sendable {
         self.mutex.lock()
         defer { self.mutex.unlock() }
         guard let configuration = self.configuration, configuration.processRole == .mainApp else { throw PasscodeError.unavailable }
+        return try self.privateAccessGroupLocked(configuration: configuration)
+    }
+
+    private func privateAccessGroupLocked(configuration: PasscodeConfiguration) throws -> String {
         if let group = self.resolvedPrivateAccessGroup { return group }
         guard let group = self.resolvePrivateAccessGroup?(), !group.isEmpty else {
             throw PasscodeError.unavailable
@@ -131,11 +156,7 @@ final class PasscodeKeychain: PasscodeStorage {
 
     private func service(_ account: String) throws -> String {
         let service = try account.hasPrefix("biometric.") ? self.environment.biometricKeychainService() : "org.telegram.passcode.v1"
-        #if os(macOS)
-        return PasscodeKeychainScope.service(service, environment: self.environment)
-        #else
-        return service
-        #endif
+        return self.environment.scopedKeychainService(service)
     }
 
     func read(_ account: String, context: LAContext? = nil) throws -> Data? {
