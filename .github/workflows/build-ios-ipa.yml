@@ -103,6 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          python3 build-system/Make/SideloadSiri.py check-source
+          python3 build-system/Make/SideloadSiri.py prepare-localizations Telegram/Telegram-iOS
           python3 - <<'PY'
           import json, os
           from pathlib import Path
@@ -110,7 +112,7 @@ jobs:
           # No real signing team is assigned at compilation time; the installed app requires valid signing.
           config.update(bundle_id=os.environ['IOS_BUNDLE_ID'], team_id='0000000000',
                         api_id='1', api_hash='0' * 32, is_internal_build='false',
-                        is_appstore_build='false', enable_siri=True, enable_icloud=False)
+                        is_appstore_build='false', enable_siri=False, enable_icloud=False)
           Path(os.environ['RUNNER_TEMP'], 'device-configuration.json').write_text(json.dumps(config))
           path = Path('versions.json')
           versions = json.loads(path.read_text())
@@ -147,6 +149,8 @@ jobs:
           root = Path(os.environ['RUNNER_TEMP'])
           path = root / 'device-configuration.json'
           config = json.loads(path.read_text())
+          if config.get('enable_siri') is not False:
+              sys.exit('The deferred-signing build must leave Siri authorization disabled.')
           mode = sys.argv[1]
           if mode not in ('analysis', 'warm', 'build'):
               sys.exit('Expected analysis, warm or build mode.')
@@ -294,6 +298,7 @@ jobs:
           stage="$RUNNER_TEMP/device-audit"
           mkdir -p "$stage"
           ditto -x -k "$ipa" "$stage"
+          python3 build-system/Make/SideloadSiri.py audit-app "$stage"/Payload/*.app
           python3 - <<'PY'
           import json, os, plistlib, re, subprocess, sys
           from pathlib import Path
