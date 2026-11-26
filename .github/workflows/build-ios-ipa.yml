@@ -1,4 +1,4 @@
-name: exteraGram iOS Port 0.0.4 - Device archive for later signing
+name: exteraGram iOS Port 0.0.5 - Device archive for later signing
 
 on:
   workflow_dispatch:
@@ -16,24 +16,10 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 330
     env:
-      PORT_VERSION: '0.0.4'
-      PORT_BUILD_NUMBER: '4'
+      PORT_VERSION: '0.0.5'
+      PORT_BUILD_NUMBER: '5'
       IOS_BUNDLE_ID: 'org.exteragram.iosport'
     steps:
-      - name: Validate API secrets without printing their values
-        shell: bash
-        env:
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import os, re, sys
-          if not re.fullmatch(r'[1-9][0-9]*', os.environ.get('TELEGRAM_API_ID', '')) or not re.fullmatch(r'[0-9a-fA-F]{32}', os.environ.get('TELEGRAM_API_HASH', '')):
-              sys.exit('Telegram API credentials are missing or malformed.')
-          print('Telegram API credentials are present and format-valid.')
-          PY
-
       - name: Check out pinned source
         uses: actions/checkout@v6
         with:
@@ -112,11 +98,8 @@ jobs:
           path.write_text('\ndef '.join(rules))
           PY
 
-      - name: Configure uninstalled device archive and resource limits
+      - name: Configure device archive and resource limits using public placeholders
         shell: bash
-        env:
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
         run: |
           set -euo pipefail
           umask 077
@@ -126,8 +109,8 @@ jobs:
           config = json.loads(Path('build-system/template_minimal_development_configuration.json').read_text())
           # No real signing team is assigned at compilation time; the installed app requires valid signing.
           config.update(bundle_id=os.environ['IOS_BUNDLE_ID'], team_id='0000000000',
-                        api_id=os.environ['TELEGRAM_API_ID'], api_hash=os.environ['TELEGRAM_API_HASH'],
-                        is_internal_build='false', is_appstore_build='false', enable_siri=True, enable_icloud=False)
+                        api_id='1', api_hash='0' * 32, is_internal_build='false',
+                        is_appstore_build='false', enable_siri=True, enable_icloud=False)
           Path(os.environ['RUNNER_TEMP'], 'device-configuration.json').write_text(json.dumps(config))
           path = Path('versions.json')
           versions = json.loads(path.read_text())
@@ -164,14 +147,22 @@ jobs:
           root = Path(os.environ['RUNNER_TEMP'])
           path = root / 'device-configuration.json'
           config = json.loads(path.read_text())
-          masks = set()
-          for value in (config['api_id'], config['api_hash']):
-              masks.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
-          cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN'], 'build',
-                 '--configurationPath', str(path), '--xcodeManagedCodesigning', '--buildNumber', os.environ['PORT_BUILD_NUMBER'], '--configuration', 'debug_arm64']
           mode = sys.argv[1]
-          if mode not in ('analysis', 'build'):
-              sys.exit('Expected analysis or build mode.')
+          if mode not in ('analysis', 'warm', 'build'):
+              sys.exit('Expected analysis, warm or build mode.')
+          masks = set()
+          if mode == 'build':
+              for value in (config['api_id'], config['api_hash']):
+                  masks.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
+          elif config['api_id'] != '1' or config['api_hash'] != '0' * 32:
+              sys.exit('Public stages require the fixed placeholder credentials.')
+          cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN']]
+          if mode == 'warm':
+              cmd += ['--cacheDir', str(root / 'public-webrtc-action-cache')]
+          cmd += ['build', '--configurationPath', str(path), '--xcodeManagedCodesigning',
+                  '--buildNumber', os.environ['PORT_BUILD_NUMBER'], '--configuration', 'debug_arm64']
+          if mode == 'warm':
+              cmd += ['--target', '//Telegram:webrtc_build_test']
           rc = Path.home() / '.bazelrc'
           previous_rc = rc.read_bytes()
           try:
@@ -219,6 +210,75 @@ jobs:
         with:
           path: ${{ runner.temp }}/bazel-repository-cache/content_addressable/sha256
           key: ${{ steps.bazel-downloads.outputs.cache-primary-key }}
+
+      - name: Compute the WebRTC compilation cache key
+        id: webrtc-cache-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          tree=$(git rev-parse HEAD:third-party)
+          build=$(xcodebuild -version | awk '/Build version/ {print $3}')
+          test -n "$build"
+          echo "key=webrtc-ios-arm64-bazel-9.2.0-xcode-${build}-v1-${tree}-${{ steps.submodules.outputs.fingerprint }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'WORKSPACE', 'build-system/bazel-patches/**') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore public WebRTC compilation outputs
+        id: webrtc-cache
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/public-webrtc-action-cache
+          key: ${{ steps.webrtc-cache-key.outputs.key }}
+
+      - name: Prepare WebRTC compilation outputs with no real API data
+        id: webrtc-warm
+        continue-on-error: true
+        shell: bash
+        run: python3 -u "$RUNNER_TEMP/device-build.py" warm
+
+      - name: Check the public WebRTC cache budget
+        id: webrtc-cache-budget
+        if: steps.webrtc-warm.outcome == 'success' && steps.webrtc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/public-webrtc-action-cache"
+          if [[ -d "$cache" ]]; then
+            size_kib=$(du -sk "$cache" | cut -f1)
+            echo "Public WebRTC compilation cache: ${size_kib} KiB"
+            if (( size_kib > 0 && size_kib <= 3 * 1024 * 1024 )); then
+              echo 'save=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Save public WebRTC compilation outputs before injecting secrets
+        if: steps.webrtc-cache-budget.outputs.save == 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/public-webrtc-action-cache
+          key: ${{ steps.webrtc-cache-key.outputs.key }}
+
+      - name: Remove the temporary CI cache and configure API credentials
+        shell: bash
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: |
+          set -euo pipefail
+          umask 077
+          rm -rf "$RUNNER_TEMP/public-webrtc-action-cache"
+          python3 - <<'PY'
+          import json, os, re, sys
+          from pathlib import Path
+          api_id = os.environ.get('TELEGRAM_API_ID', '')
+          api_hash = os.environ.get('TELEGRAM_API_HASH', '')
+          if not re.fullmatch(r'[1-9][0-9]*', api_id) or not re.fullmatch(r'[0-9a-fA-F]{32}', api_hash):
+              sys.exit('Telegram API credentials are missing or malformed.')
+          path = Path(os.environ['RUNNER_TEMP'], 'device-configuration.json')
+          config = json.loads(path.read_text())
+          config.update(api_id=api_id, api_hash=api_hash)
+          path.write_text(json.dumps(config))
+          PY
 
       - name: Compile complete ARM64 iPhone target for subsequent standard signing
         shell: bash
@@ -349,11 +409,11 @@ jobs:
           PEM
           openssl x509 -in "$RUNNER_TEMP/artifact-recipient.pem" -noout -fingerprint -sha256 | grep -F '82:4A:0B:19:A1:E8:67:01:08:3B:C8:13:6E:58:8B:50:D5:84:CF:7A:7E:F1:4A:5B:E8:56:32:93:78:27:16:44'
           ipa=bazel-bin/Telegram/Telegram.ipa
-          output="$RUNNER_TEMP/exteragram-0.0.4-iphone.ipa.cms"
+          output="$RUNNER_TEMP/exteragram-0.0.5-iphone.ipa.cms"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$ipa" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$output"
           dossier=bazel-bin/Telegram/Telegram_dossier.zip
-          dossier_output="$RUNNER_TEMP/exteragram-0.0.4-signing-dossier.zip.cms"
+          dossier_output="$RUNNER_TEMP/exteragram-0.0.5-signing-dossier.zip.cms"
           test -s "$dossier"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$dossier" -out "$dossier_output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$dossier_output"
@@ -363,10 +423,10 @@ jobs:
       - name: Upload encrypted IPA and non-secret build report
         uses: actions/upload-artifact@v7
         with:
-          name: exteraGram-iOS-Port-0.0.4-ARM64-private-test
+          name: exteraGram-iOS-Port-0.0.5-ARM64-private-test
           path: |
-            ${{ runner.temp }}/exteragram-0.0.4-iphone.ipa.cms
-            ${{ runner.temp }}/exteragram-0.0.4-signing-dossier.zip.cms
+            ${{ runner.temp }}/exteragram-0.0.5-iphone.ipa.cms
+            ${{ runner.temp }}/exteragram-0.0.5-signing-dossier.zip.cms
             ${{ runner.temp }}/ipa-report.json
             ${{ runner.temp }}/ipa-encrypted.sha256
           if-no-files-found: error
@@ -378,7 +438,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          symbols="$RUNNER_TEMP/exteragram-0.0.4-dsyms.zip"
+          symbols="$RUNNER_TEMP/exteragram-0.0.5-dsyms.zip"
           trap 'rm -f "$symbols"' EXIT
           python3 - "$symbols" <<'PY'
           import json, os, plistlib, re, subprocess, sys, zipfile
@@ -407,22 +467,35 @@ jobs:
                       continue
                   uuid = arm64_uuid(dwarf)
                   if uuid in expected:
-                      matches.setdefault(uuid, dsym)
+                      resolved = dwarf.resolve(strict=True)
+                      matches.setdefault(uuid, (dsym, dwarf.name, resolved))
 
           with (app / 'Info.plist').open('rb') as f:
               main = plistlib.load(f)['CFBundleExecutable']
           core = 'Frameworks/TelegramCoreFramework.framework/TelegramCoreFramework'
-          for binary in (main, core):
+          ui = 'Frameworks/TelegramUIFramework.framework/TelegramUIFramework'
+          for binary in (main, core, ui):
               if binary_uuids.get(binary) not in matches:
                   sys.exit('Missing matching dSYM for ' + binary)
 
+          archived_dwarfs = {}
+          bundled = {path: uuid for path, uuid in binary_uuids.items() if uuid in matches}
           with zipfile.ZipFile(sys.argv[1], 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=3) as archive:
-              for uuid, dsym in sorted(matches.items()):
-                  for member in sorted(dsym.rglob('*')):
-                      if member.is_file() and not member.is_symlink():
-                          archive.write(member, Path(uuid, dsym.name, member.relative_to(dsym)))
-              archive.writestr('ipa-dsym-uuids.json', json.dumps({p: value for p, value in binary_uuids.items() if value in matches}, indent=2) + '\n')
-          print(f'Validated {len(matches)} dSYM UUIDs, including Telegram and TelegramCoreFramework.')
+              for uuid, (dsym, name, dwarf) in sorted(matches.items()):
+                  base = Path(uuid, dsym.name)
+                  entry = base / 'Contents' / 'Resources' / 'DWARF' / name
+                  archive.write(dwarf, entry)
+                  archived_dwarfs[entry.as_posix()] = dwarf.stat().st_size
+                  plist = dsym / 'Contents' / 'Info.plist'
+                  archive.write(plist.resolve(strict=True), base / 'Contents' / 'Info.plist')
+              archive.writestr('ipa-dsym-uuids.json', json.dumps(bundled, indent=2) + '\n')
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              for name, size in archived_dwarfs.items():
+                  if not size or archive.getinfo(name).file_size != size:
+                      sys.exit('The dSYM ZIP contains a missing or incomplete DWARF entry.')
+              if archive.testzip() is not None:
+                  sys.exit('The dSYM ZIP failed its integrity check.')
+          print(f'Archived {len(archived_dwarfs)} real dSYM binaries, including TelegramUIFramework.')
           PY
           output="$symbols.cms"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$symbols" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
@@ -431,8 +504,8 @@ jobs:
       - name: Upload encrypted dSYMs for crash symbolication
         uses: actions/upload-artifact@v7
         with:
-          name: exteraGram-iOS-Port-0.0.4-ARM64-symbols-encrypted
-          path: ${{ runner.temp }}/exteragram-0.0.4-dsyms.zip.cms
+          name: exteraGram-iOS-Port-0.0.5-ARM64-symbols-encrypted
+          path: ${{ runner.temp }}/exteragram-0.0.5-dsyms.zip.cms
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
