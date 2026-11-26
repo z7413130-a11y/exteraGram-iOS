@@ -1752,7 +1752,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 leftInset: layout.safeInsets.left,
                 rightInset: layout.safeInsets.right,
                 trailingButtonsInset: layout.navigationBarTrailingButtonsInset,
-                search: ExteraSettingsStore.shared.value(for: ExteraPreferences.hideDialogsSearchBar) && !self.isSearchDisplayControllerActive ? nil : ChatListNavigationBar.Search(isEnabled: true),
+                search: ExteraSettingsStore.shared.value(for: ExteraPreferences.hideDialogsSearchBar) && self.isSearchDisplayControllerActive == nil ? nil : ChatListNavigationBar.Search(isEnabled: true),
                 activeSearch: self.isSearchDisplayControllerActive,
                 primaryContent: headerContent?.primaryContent,
                 secondaryContent: headerContent?.secondaryContent,
