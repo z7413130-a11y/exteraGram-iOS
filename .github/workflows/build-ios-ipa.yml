@@ -1,4 +1,4 @@
-name: exteraGram iOS Port 0.0.2 - Device archive for later signing
+name: exteraGram iOS Port 0.0.3 - Device archive for later signing
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 330
     env:
-      PORT_VERSION: '0.0.2'
+      PORT_VERSION: '0.0.3'
       IOS_BUNDLE_ID: 'org.exteragram.iosport'
     steps:
       - name: Validate API secrets without printing their values
@@ -155,7 +155,7 @@ jobs:
           for value in (config['api_id'], config['api_hash']):
               masks.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
           cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN'], 'build',
-                 '--configurationPath', str(path), '--xcodeManagedCodesigning', '--buildNumber', '2', '--configuration', 'debug_arm64']
+                 '--configurationPath', str(path), '--xcodeManagedCodesigning', '--buildNumber', '3', '--configuration', 'debug_arm64']
           mode = sys.argv[1]
           if mode not in ('analysis', 'build'):
               sys.exit('Expected analysis or build mode.')
@@ -311,11 +311,11 @@ jobs:
           PEM
           openssl x509 -in "$RUNNER_TEMP/artifact-recipient.pem" -noout -fingerprint -sha256 | grep -F '82:4A:0B:19:A1:E8:67:01:08:3B:C8:13:6E:58:8B:50:D5:84:CF:7A:7E:F1:4A:5B:E8:56:32:93:78:27:16:44'
           ipa=bazel-bin/Telegram/Telegram.ipa
-          output="$RUNNER_TEMP/exteragram-0.0.2-iphone.ipa.cms"
+          output="$RUNNER_TEMP/exteragram-0.0.3-iphone.ipa.cms"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$ipa" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$output"
           dossier=bazel-bin/Telegram/Telegram_dossier.zip
-          dossier_output="$RUNNER_TEMP/exteragram-0.0.2-signing-dossier.zip.cms"
+          dossier_output="$RUNNER_TEMP/exteragram-0.0.3-signing-dossier.zip.cms"
           test -s "$dossier"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$dossier" -out "$dossier_output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$dossier_output"
@@ -325,10 +325,10 @@ jobs:
       - name: Upload encrypted IPA and non-secret build report
         uses: actions/upload-artifact@v7
         with:
-          name: exteraGram-iOS-Port-0.0.2-ARM64-private-test
+          name: exteraGram-iOS-Port-0.0.3-ARM64-private-test
           path: |
-            ${{ runner.temp }}/exteragram-0.0.2-iphone.ipa.cms
-            ${{ runner.temp }}/exteragram-0.0.2-signing-dossier.zip.cms
+            ${{ runner.temp }}/exteragram-0.0.3-iphone.ipa.cms
+            ${{ runner.temp }}/exteragram-0.0.3-signing-dossier.zip.cms
             ${{ runner.temp }}/ipa-report.json
             ${{ runner.temp }}/ipa-encrypted.sha256
           if-no-files-found: error
