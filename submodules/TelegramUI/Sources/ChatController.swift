@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import Postbox
 import SwiftSignalKit
@@ -7809,6 +7810,8 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }
     }
     
+    private var exteraShareButtonHidden = ExteraSettingsStore.shared.value(for: ExteraPreferences.hideShareButton)
+
     override public func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         self.forwardSideListAppearance(.willAppear, animated: animated)
@@ -7816,6 +7819,19 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.walletTransferAnimationsVisible = true
         self.chatDisplayNode.historyNode.forEachVisibleMessageItemNode { itemNode in
             itemNode.unreadMessageRangeUpdated()
+        }
+        let hideShareButton = ExteraSettingsStore.shared.value(for: ExteraPreferences.hideShareButton)
+        if self.exteraShareButtonHidden != hideShareButton {
+            self.exteraShareButtonHidden = hideShareButton
+            var visibleMessageIds: [EngineMessage.Id] = []
+            self.chatDisplayNode.historyNode.forEachVisibleMessageItemNode { itemNode in
+                if let message = itemNode.messages().first {
+                    visibleMessageIds.append(message.id)
+                }
+            }
+            for messageId in visibleMessageIds {
+                self.chatDisplayNode.historyNode.requestMessageUpdate(messageId)
+            }
         }
                 
         if self.willAppear {

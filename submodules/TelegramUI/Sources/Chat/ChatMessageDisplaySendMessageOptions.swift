@@ -3,6 +3,8 @@ import UIKit
 import AsyncDisplayKit
 import ContextUI
 import Display
+import ExteraDraftTranslation
+import ExteraSettings
 import SwiftSignalKit
 import TelegramCore
 import TelegramNotices
@@ -306,7 +308,8 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                         return nil
                     }
                     return makeRichTextSendPreview(context: selfController.context, content: selfController.presentationInterfaceState.interfaceState.composeInputState.content, mediaPreview: mediaPreview)
-                }()
+                }(),
+                translateDraft: exteraTranslateDraftAction(selfController, peerId: peerId, hasMediaPreview: mediaPreview != nil)
             )
             selfController.sendMessageActionsController = controller
             if layout.isNonExclusive {
@@ -315,5 +318,39 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                 selfController.presentInGlobalOverlay(controller, with: nil)
             }
         }
+    })
+}
+
+private func exteraTranslateDraftAction(_ controller: ChatControllerImpl, peerId: EnginePeer.Id, hasMediaPreview: Bool) -> (title: String, action: () -> Void)? {
+    let state = controller.presentationInterfaceState.interfaceState
+    let original = state.composeInputState
+    guard ExteraSettingsStore.shared.value(for: ExteraPreferences.translateDrafts),
+          peerId.namespace != Namespaces.Peer.SecretChat, !hasMediaPreview, state.editMessage == nil,
+          !original.inputText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          original.content.isEntityExpressible(options: [.quotesRequireRichContent]) else {
+        return nil
+    }
+    if case .customChatContents = controller.presentationInterfaceState.subject {
+        return nil
+    }
+    let strings = ExteraStrings(languageCode: controller.presentationData.strings.baseLanguageCode)
+    let isCurrentDraft: () -> Bool = { [weak controller] in
+        guard let controller, controller.viewIfLoaded?.window != nil, controller.chatLocation.peerId == peerId else { return false }
+        let current = controller.presentationInterfaceState.interfaceState
+        return current.editMessage == nil && current.mediaDraftState == nil && current.composeInputState.content == original.content
+    }
+    return (strings.translateDraft, { [weak controller] in
+        guard let controller else { return }
+        requestExteraDraftTranslation(
+            context: controller.context, peerId: peerId, draft: original.inputText, isCurrentDraft: isCurrentDraft,
+            present: { [weak controller] alert in
+                controller?.present(alert, in: .window(.root))
+            },
+            replace: { [weak controller] text in
+                controller?.updateChatPresentationInterfaceState(animated: true, interactive: true, saveInterfaceState: true) { state in
+                    return state.updatedInterfaceState { $0.withUpdatedComposeInputState(ChatTextInputState(inputText: text)) }
+                }
+            }
+        )
     })
 }

@@ -65,6 +65,9 @@ swift_library(
         "//conditions:default": [],
     }),
     deps = [
+        "//submodules/ExteraDraftTranslation",
+        "//submodules/ExteraMessageDetailsUI",
+        "//submodules/ExteraSettings",
         "//submodules/CrashReporting:CrashReporting",
         "//third-party/recaptcha:RecaptchaEnterprise",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",

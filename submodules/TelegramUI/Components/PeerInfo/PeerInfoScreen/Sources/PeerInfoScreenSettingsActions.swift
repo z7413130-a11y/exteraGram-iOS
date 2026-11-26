@@ -5,6 +5,7 @@ import AccountContext
 import SwiftSignalKit
 import TelegramCore
 import SettingsUI
+import ExteraSettingsUI
 import PeerInfoStoryGridScreen
 import CallListUI
 import ContactListUI
@@ -98,6 +99,11 @@ extension PeerInfoScreenNode {
         case .chatFolders:
             let controller = self.context.sharedContext.makeFilterSettingsController(context: self.context, modal: false, scrollToTags: false, dismissed: nil)
             push(controller)
+        case .exteraGram:
+            let context = self.context
+            push(exteraSettingsController(context: context, makeAppearanceController: {
+                return themeSettingsController(context: context)
+            }))
         case .notificationsAndSounds:
             if let settings = self.data?.globalSettings {
                 push(notificationsAndSoundsController(context: self.context, exceptionsList: settings.notificationExceptions))

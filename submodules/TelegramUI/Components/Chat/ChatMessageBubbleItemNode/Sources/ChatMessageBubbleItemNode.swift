@@ -2209,6 +2209,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         if bubbleStyle.isBubbleless && !isAd {
             needsShareButton = false
         }
+        needsShareButton = needsShareButton && exteraAllowsShareButton(
+            message: EngineMessage(item.message), chatLocation: item.chatLocation, subject: item.associatedData.subject,
+            accountPeerId: item.context.account.peerId, showsComments: isInstantVideo
+        )
 
         var tmpWidth: CGFloat
         if allowFullWidth {

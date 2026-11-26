@@ -399,6 +399,10 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                 needsShareButton = false
             }
             
+            needsShareButton = needsShareButton && exteraAllowsShareButton(
+                message: EngineMessage(item.message), chatLocation: item.chatLocation, subject: item.associatedData.subject,
+                accountPeerId: item.context.account.peerId
+            )
             var layoutInsets = layoutConstants.instantVideo.insets
             if dateHeaderAtBottom.hasDate && dateHeaderAtBottom.hasTopic {
                 layoutInsets.top += layoutConstants.timestampDateAndTopicHeaderHeight

@@ -98,6 +98,7 @@ final class ChatSendMessageContextScreenComponent: Component {
     let availableMessageEffects: AvailableMessageEffects?
     let isPremium: Bool
     let richTextPreview: ChatSendMessageContextScreenRichTextPreview?
+    let translateDraft: (title: String, action: () -> Void)?
 
     init(
         initialData: ChatSendMessageContextScreen.InitialData,
@@ -119,7 +120,8 @@ final class ChatSendMessageContextScreenComponent: Component {
         reactionItems: [ReactionItem]?,
         availableMessageEffects: AvailableMessageEffects?,
         isPremium: Bool,
-        richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
+        richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil,
+        translateDraft: (title: String, action: () -> Void)? = nil
     ) {
         self.initialData = initialData
         self.context = context
@@ -141,6 +143,7 @@ final class ChatSendMessageContextScreenComponent: Component {
         self.availableMessageEffects = availableMessageEffects
         self.isPremium = isPremium
         self.richTextPreview = richTextPreview
+        self.translateDraft = translateDraft
     }
 
     static func ==(lhs: ChatSendMessageContextScreenComponent, rhs: ChatSendMessageContextScreenComponent) -> Bool {
@@ -505,6 +508,16 @@ final class ChatSendMessageContextScreenComponent: Component {
             }
             
             var items: [ContextMenuItem] = []
+            if let translateDraft = component.translateDraft, textString.length != 0 {
+                items.append(.action(ContextMenuActionItem(
+                    id: AnyHashable("exteraTranslateDraft"),
+                    text: translateDraft.title,
+                    icon: { _ in nil },
+                    action: { [weak self] _, _ in
+                        self?.environment?.controller()?.dismiss(completion: translateDraft.action)
+                    }
+                )))
+            }
             
             let canAdjustMediaCaptionPosition: Bool
             switch component.params {
@@ -1517,7 +1530,8 @@ public class ChatSendMessageContextScreen: ViewControllerComponentContainer, Cha
         reactionItems: [ReactionItem]?,
         availableMessageEffects: AvailableMessageEffects?,
         isPremium: Bool,
-        richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil
+        richTextPreview: ChatSendMessageContextScreenRichTextPreview? = nil,
+        translateDraft: (title: String, action: () -> Void)? = nil
     ) {
         self.context = context
 
@@ -1543,7 +1557,8 @@ public class ChatSendMessageContextScreen: ViewControllerComponentContainer, Cha
                 reactionItems: reactionItems,
                 availableMessageEffects: availableMessageEffects,
                 isPremium: isPremium,
-                richTextPreview: richTextPreview
+                richTextPreview: richTextPreview,
+                translateDraft: translateDraft
             ),
             navigationBarAppearance: .none,
             statusBarStyle: .none,

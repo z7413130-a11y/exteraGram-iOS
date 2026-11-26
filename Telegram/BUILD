@@ -341,7 +341,10 @@ alternate_icon_folders = [
     "PremiumTurbo",
 ]
 
-composer_icon_folders = ["Telegram"]
+filegroup(
+    name = "ExteraGramAppIcon",
+    srcs = glob(["Telegram-iOS/AppIcons.xcassets/ExteraGram.appiconset/*"]),
+)
 
 [
     filegroup(
@@ -350,15 +353,6 @@ composer_icon_folders = ["Telegram"]
             "Telegram-iOS/{}.alticon/*.png".format(name),
         ]),
     ) for name in alternate_icon_folders
-]
-
-[
-    filegroup(
-        name = "{}_icon".format(name),
-        srcs = glob([
-            "Telegram-iOS/{}.icon/**/*".format(name),
-        ]),
-    ) for name in composer_icon_folders
 ]
 
 filegroup(
@@ -1701,11 +1695,11 @@ plist_fragment(
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>exteraGram</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
@@ -1936,7 +1930,8 @@ ios_application(
         ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ] + ([":TelegramCloudKitInfoPlist"] if telegram_enable_icloud else []),
-    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
+    app_icons = [":ExteraGramAppIcon"],
+    primary_app_icon = "ExteraGram",
     alternate_icons = [
         ":{}".format(name) for name in alternate_icon_folders
     ],

@@ -171,6 +171,7 @@ enum PeerInfoSettingsSection {
     case contacts
     case devices
     case chatFolders
+    case exteraGram
     case notificationsAndSounds
     case privacyAndSecurity
     case passwordSetup

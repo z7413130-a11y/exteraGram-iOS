@@ -613,6 +613,10 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 needsShareButton = false
             }
             
+            needsShareButton = needsShareButton && exteraAllowsShareButton(
+                message: EngineMessage(item.message), chatLocation: item.chatLocation, subject: item.associatedData.subject,
+                accountPeerId: item.context.account.peerId
+            )
             var layoutInsets = UIEdgeInsets(top: mergedTop.merged ? layoutConstants.bubble.mergedSpacing : layoutConstants.bubble.defaultSpacing, left: 0.0, bottom: mergedBottom.merged ? layoutConstants.bubble.mergedSpacing : layoutConstants.bubble.defaultSpacing, right: 0.0)
             if dateHeaderAtBottom.hasDate && dateHeaderAtBottom.hasTopic {
                 layoutInsets.top += layoutConstants.timestampDateAndTopicHeaderHeight

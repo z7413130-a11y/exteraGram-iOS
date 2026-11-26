@@ -1,4 +1,6 @@
 import Foundation
+import ExteraMessageDetailsUI
+import ExteraSettings
 import UIKit
 import TelegramCore
 import AsyncDisplayKit
@@ -2528,6 +2530,15 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
+        if ExteraSettingsStore.shared.value(for: ExteraPreferences.showDetailsButton),
+           !isAction, message.adAttribute == nil, message.id.namespace == Namespaces.Message.Cloud {
+            let strings = ExteraStrings(languageCode: chatPresentationInterfaceState.strings.baseLanguageCode)
+            actions.append(.action(ContextMenuActionItem(text: strings.messageDetails, icon: { _ in nil }, action: { c, _ in
+                c?.dismiss(completion: {
+                    controllerInteraction.presentController(exteraMessageDetailsController(context: context, message: message), nil)
+                })
+            })))
+        }
         return ContextController.Items(content: .list(actions), tip: nil)
     }
 }

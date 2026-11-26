@@ -1067,6 +1067,10 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                 needsShareButton = false
             }
             
+            needsShareButton = needsShareButton && exteraAllowsShareButton(
+                message: EngineMessage(item.message), chatLocation: item.chatLocation, subject: item.associatedData.subject,
+                accountPeerId: item.context.account.peerId
+            )
             var isEmoji = false
             if let _ = telegramDice {
                 imageSize = displaySize
