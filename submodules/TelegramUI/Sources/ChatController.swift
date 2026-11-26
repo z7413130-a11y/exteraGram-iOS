@@ -7813,7 +7813,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         }
     }
     
-    private var exteraShareButtonHidden = ExteraSettingsStore.shared.value(for: ExteraPreferences.hideShareButton)
+    private var exteraAppearance = ExteraChatVisualSettings()
 
     override public func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -7823,9 +7823,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         self.chatDisplayNode.historyNode.forEachVisibleMessageItemNode { itemNode in
             itemNode.unreadMessageRangeUpdated()
         }
-        let hideShareButton = ExteraSettingsStore.shared.value(for: ExteraPreferences.hideShareButton)
-        if self.exteraShareButtonHidden != hideShareButton {
-            self.exteraShareButtonHidden = hideShareButton
+        let exteraAppearance = ExteraChatVisualSettings()
+        if self.exteraAppearance != exteraAppearance {
+            self.exteraAppearance = exteraAppearance
+            self.updateChatPresentationInterfaceState(transition: .immediate, interactive: false, force: true, { $0 })
             var visibleMessageIds: [EngineMessage.Id] = []
             self.chatDisplayNode.historyNode.forEachVisibleMessageItemNode { itemNode in
                 if let message = itemNode.messages().first {

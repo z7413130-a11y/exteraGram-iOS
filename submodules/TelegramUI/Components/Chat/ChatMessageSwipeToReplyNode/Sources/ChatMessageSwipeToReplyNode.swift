@@ -20,6 +20,7 @@ public final class ChatMessageSwipeToReplyNode: ASDisplayNode {
     
     private let backgroundNode: NavigationBackgroundNode
     private let foregroundNode: ASImageNode
+    private let foregroundColor: UIColor
     
     private let maskNode: ASDisplayNode
     private let progressLayer: SimpleShapeLayer
@@ -35,47 +36,10 @@ public final class ChatMessageSwipeToReplyNode: ASDisplayNode {
         self.foregroundNode = ASImageNode()
         self.foregroundNode.isUserInteractionEnabled = false
 
-        if case let .symbol(name) = action {
-            self.foregroundNode.contentMode = .center
-            self.foregroundNode.image = UIImage(systemName: name)?.withTintColor(foregroundColor, renderingMode: .alwaysOriginal)
-        } else {
-            self.foregroundNode.image = generateImage(CGSize(width: 33.0, height: 33.0), rotatedContext: { size, context in
-                context.clear(CGRect(origin: CGPoint(), size: size))
-            
-                switch action {
-                case .symbol:
-                    break
-                case .reply:
-                    if let image = UIImage(bundleImageName: "Chat/Message/ShareIcon") {
-                        let imageRect = CGRect(origin: CGPoint(x: floor((size.width - image.size.width) / 2.0), y: floor((size.height - image.size.height) / 2.0)), size: image.size)
-                    
-                        context.translateBy(x: imageRect.midX, y: imageRect.midY)
-                        context.scaleBy(x: -1.0, y: -1.0)
-                        context.translateBy(x: -imageRect.midX, y: -imageRect.midY)
-                        context.clip(to: imageRect, mask: image.cgImage!)
-                        context.setFillColor(foregroundColor.cgColor)
-                        context.fill(imageRect)
-                    }
-                case .like, .unlike:
-                    if let image = UIImage(bundleImageName: action == .like ? "Chat/Reactions/SwipeActionHeartFilled" : "Chat/Reactions/SwipeActionHeartBroken") {
-                        let imageRect = CGRect(origin: CGPoint(x: floor((size.width - image.size.width) / 2.0), y: floor((size.height - image.size.height) / 2.0)), size: image.size)
-                    
-                        context.translateBy(x: imageRect.midX, y: imageRect.midY)
-                        context.scaleBy(x: 1.0, y: -1.0)
-                        context.translateBy(x: -imageRect.midX, y: -imageRect.midY)
-                        if case .like = action {
-                            context.translateBy(x: 0.0, y: -1.0)
-                        } else {
-                            context.translateBy(x: 0.5, y: -1.0)
-                        }
-                        context.clip(to: imageRect, mask: image.cgImage!)
-                        context.setFillColor(foregroundColor.cgColor)
-                        context.fill(imageRect)
-                    }
-                }
-            })
-        }
-        
+        self.foregroundColor = foregroundColor
+        self.foregroundNode.contentMode = .center
+        self.foregroundNode.image = Self.image(action: action, foregroundColor: foregroundColor)
+
         self.maskNode = ASDisplayNode()
         self.progressLayer = SimpleShapeLayer()
         self.fillLayer = SimpleShapeLayer()
@@ -151,6 +115,52 @@ public final class ChatMessageSwipeToReplyNode: ASDisplayNode {
     }
     
     private var animatedWave = false
+    public func updateAction(_ action: Action) {
+        self.foregroundNode.image = Self.image(action: action, foregroundColor: self.foregroundColor)
+    }
+
+    private static func image(action: Action, foregroundColor: UIColor) -> UIImage? {
+        if case let .symbol(name) = action {
+            return UIImage(systemName: name)?.withTintColor(foregroundColor, renderingMode: .alwaysOriginal)
+        } else {
+            return generateImage(CGSize(width: 33.0, height: 33.0), rotatedContext: { size, context in
+                context.clear(CGRect(origin: CGPoint(), size: size))
+
+                switch action {
+                case .symbol:
+                    break
+                case .reply:
+                    if let image = UIImage(bundleImageName: "Chat/Message/ShareIcon") {
+                        let imageRect = CGRect(origin: CGPoint(x: floor((size.width - image.size.width) / 2.0), y: floor((size.height - image.size.height) / 2.0)), size: image.size)
+
+                        context.translateBy(x: imageRect.midX, y: imageRect.midY)
+                        context.scaleBy(x: -1.0, y: -1.0)
+                        context.translateBy(x: -imageRect.midX, y: -imageRect.midY)
+                        context.clip(to: imageRect, mask: image.cgImage!)
+                        context.setFillColor(foregroundColor.cgColor)
+                        context.fill(imageRect)
+                    }
+                case .like, .unlike:
+                    if let image = UIImage(bundleImageName: action == .like ? "Chat/Reactions/SwipeActionHeartFilled" : "Chat/Reactions/SwipeActionHeartBroken") {
+                        let imageRect = CGRect(origin: CGPoint(x: floor((size.width - image.size.width) / 2.0), y: floor((size.height - image.size.height) / 2.0)), size: image.size)
+
+                        context.translateBy(x: imageRect.midX, y: imageRect.midY)
+                        context.scaleBy(x: 1.0, y: -1.0)
+                        context.translateBy(x: -imageRect.midX, y: -imageRect.midY)
+                        if case .like = action {
+                            context.translateBy(x: 0.0, y: -1.0)
+                        } else {
+                            context.translateBy(x: 0.5, y: -1.0)
+                        }
+                        context.clip(to: imageRect, mask: image.cgImage!)
+                        context.setFillColor(foregroundColor.cgColor)
+                        context.fill(imageRect)
+                    }
+                }
+            })
+        }
+    }
+
     public func updateProgress(_ progress: CGFloat) {
         let progress = max(0.0, min(1.0, progress))
         var foregroundProgress = min(1.0, progress * 1.2)

@@ -68,6 +68,7 @@ public final class ChatListNavigationBar: Component {
     public let primaryContent: ChatListHeaderComponent.Content?
     public let secondaryContent: ChatListHeaderComponent.Content?
     public let secondaryTransition: CGFloat
+    public let preferCenteredTitle: Bool
     public let storySubscriptions: EngineStorySubscriptions?
     public let storiesIncludeHidden: Bool
     public let uploadProgress: [EnginePeer.Id: Float]
@@ -100,6 +101,7 @@ public final class ChatListNavigationBar: Component {
         primaryContent: ChatListHeaderComponent.Content?,
         secondaryContent: ChatListHeaderComponent.Content?,
         secondaryTransition: CGFloat,
+        preferCenteredTitle: Bool = false,
         storySubscriptions: EngineStorySubscriptions?,
         storiesIncludeHidden: Bool,
         uploadProgress: [EnginePeer.Id: Float],
@@ -129,6 +131,7 @@ public final class ChatListNavigationBar: Component {
         self.primaryContent = primaryContent
         self.secondaryContent = secondaryContent
         self.secondaryTransition = secondaryTransition
+        self.preferCenteredTitle = preferCenteredTitle
         self.storySubscriptions = storySubscriptions
         self.storiesIncludeHidden = storiesIncludeHidden
         self.uploadProgress = uploadProgress
@@ -184,7 +187,7 @@ public final class ChatListNavigationBar: Component {
         if lhs.secondaryTransition != rhs.secondaryTransition {
             return false
         }
-        if lhs.storySubscriptions != rhs.storySubscriptions {
+        if lhs.preferCenteredTitle != rhs.preferCenteredTitle || lhs.storySubscriptions != rhs.storySubscriptions {
             return false
         }
         if lhs.storiesIncludeHidden != rhs.storiesIncludeHidden {
@@ -630,6 +633,7 @@ public final class ChatListNavigationBar: Component {
                 primaryContent: component.primaryContent,
                 secondaryContent: component.secondaryContent,
                 secondaryTransition: component.secondaryTransition,
+                preferCenteredTitle: component.preferCenteredTitle,
                 storySubscriptions: component.storySubscriptions,
                 storiesIncludeHidden: component.storiesIncludeHidden,
                 storiesFraction: storiesOffsetFraction,
@@ -856,6 +860,7 @@ public final class ChatListNavigationBar: Component {
                     primaryContent: component.primaryContent,
                     secondaryContent: component.secondaryContent,
                     secondaryTransition: component.secondaryTransition,
+                    preferCenteredTitle: component.preferCenteredTitle,
                     storySubscriptions: component.storySubscriptions,
                     storiesIncludeHidden: component.storiesIncludeHidden,
                     uploadProgress: storyUploadProgress,
@@ -881,6 +886,7 @@ public final class ChatListNavigationBar: Component {
                         primaryContent: headerComponent.primaryContent,
                         secondaryContent: headerComponent.secondaryContent,
                         secondaryTransition: headerComponent.secondaryTransition,
+                        preferCenteredTitle: headerComponent.preferCenteredTitle,
                         storySubscriptions: headerComponent.storySubscriptions,
                         storiesIncludeHidden: headerComponent.storiesIncludeHidden,
                         storiesFraction: headerComponent.storiesFraction,

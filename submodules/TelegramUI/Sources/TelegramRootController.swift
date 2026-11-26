@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -205,8 +206,10 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         tabBarController.navigationPresentation = .master
         let chatListController = self.context.sharedContext.makeChatListController(context: self.context, location: .chatList(groupId: .root), controlsHistoryPreload: true, hideNetworkActivityStatus: false, previewing: false, enableDebugActions: !GlobalExperimentalSettings.isAppStoreBuild)
         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
-            chatListController.tabBarItem.badgeValue = sharedContext.switchingData.chatListBadge
-            chatListController.tabBarItem.accessibilityValue = sharedContext.switchingData.chatListBadgeAccessibilityValue
+            if !ExteraAppearance.hidesUnreadCounters {
+                chatListController.tabBarItem.badgeValue = sharedContext.switchingData.chatListBadge
+                chatListController.tabBarItem.accessibilityValue = sharedContext.switchingData.chatListBadgeAccessibilityValue
+            }
         }
         let callListController = CallListController(context: self.context, mode: .tab)
         // Created even when hidden, like the calls tab: `updateRootControllers` shows and hides it.

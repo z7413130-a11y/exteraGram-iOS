@@ -49,6 +49,7 @@ public final class StoryPeerListComponent: Component {
     public let titleHasLock: Bool
     public let titleHasActivity: Bool
     public let titlePeerStatus: PeerStatus?
+    public let preferCenteredTitle: Bool
     public let minTitleX: CGFloat
     public let maxTitleX: CGFloat
     public let useHiddenList: Bool
@@ -73,6 +74,7 @@ public final class StoryPeerListComponent: Component {
         titleHasLock: Bool,
         titleHasActivity: Bool,
         titlePeerStatus: PeerStatus?,
+        preferCenteredTitle: Bool = false,
         minTitleX: CGFloat,
         maxTitleX: CGFloat,
         useHiddenList: Bool,
@@ -96,6 +98,7 @@ public final class StoryPeerListComponent: Component {
         self.titleHasLock = titleHasLock
         self.titleHasActivity = titleHasActivity
         self.titlePeerStatus = titlePeerStatus
+        self.preferCenteredTitle = preferCenteredTitle
         self.minTitleX = minTitleX
         self.maxTitleX = maxTitleX
         self.useHiddenList = useHiddenList
@@ -138,7 +141,7 @@ public final class StoryPeerListComponent: Component {
         if lhs.titlePeerStatus != rhs.titlePeerStatus {
             return false
         }
-        if lhs.minTitleX != rhs.minTitleX {
+        if lhs.preferCenteredTitle != rhs.preferCenteredTitle || lhs.minTitleX != rhs.minTitleX {
             return false
         }
         if lhs.maxTitleX != rhs.maxTitleX {
@@ -994,7 +997,7 @@ public final class StoryPeerListComponent: Component {
             let titleWidth = collapsedState.titleWidth - hiddenTitleWidth
             let placedContentWidth = centralContentWidth - hiddenTitleWidth
             self.titleOriginWidths = (itemLayout.containerSize.width, placedContentWidth, titleWidth)
-            collapsedContentOrigin = StoryPeerListTitleLayout.contentOrigin(containerWidth: itemLayout.containerSize.width, contentWidth: placedContentWidth, minX: component.minTitleX, maxX: component.maxTitleX) + (self.titleOriginOffsetCurve?.value(at: CACurrentMediaTime()) ?? 0.0)
+            collapsedContentOrigin = StoryPeerListTitleLayout.contentOrigin(containerWidth: itemLayout.containerSize.width, contentWidth: placedContentWidth, minX: component.minTitleX, maxX: component.maxTitleX, preferCentered: component.preferCenteredTitle) + (self.titleOriginOffsetCurve?.value(at: CACurrentMediaTime()) ?? 0.0)
             
             let collapsedContentOriginOffset: CGFloat = 0.0
             collapsedContentOrigin -= collapsedContentOriginOffset
@@ -1487,7 +1490,7 @@ public final class StoryPeerListComponent: Component {
             if self.sortedItems.isEmpty {
                 titleContentOffset = collapsedTitleOffset
             } else {
-                let expandedTitleOrigin = StoryPeerListTitleLayout.expandedTitleOrigin(containerWidth: itemLayout.containerSize.width, titleWidth: titleWidth, minX: component.minTitleX, maxX: component.maxTitleX) + (self.expandedTitleOriginOffsetCurve?.value(at: CACurrentMediaTime()) ?? 0.0)
+                let expandedTitleOrigin = StoryPeerListTitleLayout.expandedTitleOrigin(containerWidth: itemLayout.containerSize.width, titleWidth: titleWidth, minX: component.minTitleX, maxX: component.maxTitleX, preferCentered: component.preferCenteredTitle) + (self.expandedTitleOriginOffsetCurve?.value(at: CACurrentMediaTime()) ?? 0.0)
                 titleContentOffset = titleMinContentOffset.interpolate(to: expandedTitleOrigin, amount: min(1.0, collapsedState.maxFraction) * (1.0 - collapsedState.activityFraction))
                 titleContentOffset += -expandBoundsFraction * 4.0
             }
@@ -1695,15 +1698,15 @@ public final class StoryPeerListComponent: Component {
                     // movement springs: a band change that does not move it (content centred far from both sides)
                     // starts nothing.
                     self.titleOriginOffsetCurve = View.bandChangeCurve(
-                        from: StoryPeerListTitleLayout.contentOrigin(containerWidth: widths.container, contentWidth: widths.content, minX: previousComponent.minTitleX, maxX: previousComponent.maxTitleX),
-                        to: StoryPeerListTitleLayout.contentOrigin(containerWidth: widths.container, contentWidth: widths.content, minX: component.minTitleX, maxX: component.maxTitleX),
+                        from: StoryPeerListTitleLayout.contentOrigin(containerWidth: widths.container, contentWidth: widths.content, minX: previousComponent.minTitleX, maxX: previousComponent.maxTitleX, preferCentered: previousComponent.preferCenteredTitle),
+                        to: StoryPeerListTitleLayout.contentOrigin(containerWidth: widths.container, contentWidth: widths.content, minX: component.minTitleX, maxX: component.maxTitleX, preferCentered: component.preferCenteredTitle),
                         current: self.titleOriginOffsetCurve,
                         now: now,
                         duration: duration
                     )
                     self.expandedTitleOriginOffsetCurve = View.bandChangeCurve(
-                        from: StoryPeerListTitleLayout.expandedTitleOrigin(containerWidth: widths.container, titleWidth: widths.expandedTitle, minX: previousComponent.minTitleX, maxX: previousComponent.maxTitleX),
-                        to: StoryPeerListTitleLayout.expandedTitleOrigin(containerWidth: widths.container, titleWidth: widths.expandedTitle, minX: component.minTitleX, maxX: component.maxTitleX),
+                        from: StoryPeerListTitleLayout.expandedTitleOrigin(containerWidth: widths.container, titleWidth: widths.expandedTitle, minX: previousComponent.minTitleX, maxX: previousComponent.maxTitleX, preferCentered: previousComponent.preferCenteredTitle),
+                        to: StoryPeerListTitleLayout.expandedTitleOrigin(containerWidth: widths.container, titleWidth: widths.expandedTitle, minX: component.minTitleX, maxX: component.maxTitleX, preferCentered: component.preferCenteredTitle),
                         current: self.expandedTitleOriginOffsetCurve,
                         now: now,
                         duration: duration

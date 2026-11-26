@@ -275,6 +275,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private var displayedStoriesTooltip: Bool = false
     
     public var hasStorySubscriptions: Bool {
+        guard !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideStories) else { return false }
         if let rawStorySubscriptions = self.rawStorySubscriptions, !rawStorySubscriptions.items.isEmpty {
             return true
         } else {
@@ -2379,6 +2380,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private weak var storyTooltip: TooltipScreen?
     fileprivate func maybeDisplayStoryTooltip() {
+        guard !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideStories) else { return }
         let content = self.updateHeaderContent()
         if content.secondaryContent != nil {
             return

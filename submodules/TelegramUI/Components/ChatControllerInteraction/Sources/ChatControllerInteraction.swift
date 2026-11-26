@@ -53,6 +53,18 @@ public enum ChatControllerInteractionSwipeAction: Equatable {
     case extera(Int, symbol: String)
 }
 
+public struct ChatControllerExteraSwipeConfiguration {
+    public let actions: [ChatControllerInteractionSwipeAction]
+    public let wraps: Bool
+    public let reversesSelection: Bool
+
+    public init(actions: [ChatControllerInteractionSwipeAction], wraps: Bool, reversesSelection: Bool) {
+        self.actions = actions
+        self.wraps = wraps
+        self.reversesSelection = reversesSelection
+    }
+}
+
 public enum ChatControllerInteractionReaction {
     case `default`
     case reaction(MessageReaction.Reaction)
@@ -263,7 +275,7 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let openSearch: () -> Void
     public let setupReply: (EngineMessage.Id) -> Void
     public var exteraDoubleTap: ((EngineRawMessage) -> Bool)?
-    public var exteraSwipe: ((EngineRawMessage) -> ChatControllerInteractionSwipeAction)?
+    public var exteraSwipe: ((EngineRawMessage) -> ChatControllerExteraSwipeConfiguration)?
     public var performExteraGesture: ((Int, EngineRawMessage) -> Void)?
     public let canSetupReply: (EngineRawMessage) -> ChatControllerInteractionSwipeAction
     public let canSendMessages: () -> Bool

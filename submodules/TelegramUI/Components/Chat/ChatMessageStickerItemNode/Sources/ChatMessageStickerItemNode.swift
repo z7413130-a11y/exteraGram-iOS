@@ -112,6 +112,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
     
     private var replyRecognizer: ChatSwipeToReplyRecognizer?
     private var currentSwipeAction: ChatControllerInteractionSwipeAction?
+    private var exteraSwipeConfiguration: ChatControllerExteraSwipeConfiguration?
     
     private var appliedForwardInfo: ChatMessageAppliedForwardInfo?
 
@@ -315,7 +316,14 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                     return false
                 }
                 
-                let action = item.controllerInteraction.exteraSwipe?(item.message) ?? item.controllerInteraction.canSetupReply(item.message)
+                let configuration = item.controllerInteraction.exteraSwipe?(item.message)
+                strongSelf.exteraSwipeConfiguration = configuration
+                let action: ChatControllerInteractionSwipeAction
+                if let configuration {
+                    action = configuration.actions.first ?? .none
+                } else {
+                    action = item.controllerInteraction.canSetupReply(item.message)
+                }
                 strongSelf.currentSwipeAction = action
                 if case .none = action {
                     return false
@@ -1812,6 +1820,18 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 self.item?.controllerInteraction.cancelInteractiveKeyboardGestures()
             case .changed:
                 var translation = recognizer.translation(in: self.view)
+                if let configuration = self.exteraSwipeConfiguration, configuration.actions.count > 1 {
+                    let index = recognizer.updateActionSelection(translation: translation, horizontalThreshold: swipeOffset,
+                        actionCount: configuration.actions.count, wraps: configuration.wraps, reversed: configuration.reversesSelection)
+                    let action = configuration.actions[index]
+                    if action != self.currentSwipeAction {
+                        self.currentSwipeAction = action
+                        self.swipeToReplyNode?.updateAction(ChatMessageSwipeToReplyNode.Action(action))
+                        if self.playedSwipeToReplyHaptic {
+                            self.swipeToReplyFeedback?.impact(.light)
+                        }
+                    }
+                }
                 func rubberBandingOffset(offset: CGFloat, bandingStart: CGFloat) -> CGFloat {
                     let bandedOffset = offset - bandingStart
                     if offset < bandingStart {

@@ -13,10 +13,13 @@ enum StoryPeerListTitleLayout {
     static let balanceRamp: CGFloat = 20.0
 
     /// The content's left edge in a row of `containerWidth`, the band between the buttons running from `minX` to `maxX`.
-    static func contentOrigin(containerWidth: CGFloat, contentWidth: CGFloat, minX: CGFloat, maxX: CGFloat) -> CGFloat {
+    static func contentOrigin(containerWidth: CGFloat, contentWidth: CGFloat, minX: CGFloat, maxX: CGFloat, preferCentered: Bool = false) -> CGFloat {
         let lowerBound = minX + StoryPeerListTitleLayout.leadingMargin
         let upperBound = maxX - StoryPeerListTitleLayout.trailingMargin
         let centred = (containerWidth - contentWidth) * 0.5
+        if preferCentered, contentWidth <= upperBound - lowerBound {
+            return min(max(centred, lowerBound), upperBound - contentWidth)
+        }
         let balanced = (lowerBound + upperBound - contentWidth) * 0.5
         let closestGap = min(centred - lowerBound, upperBound - (centred + contentWidth))
         let x = max(0.0, min(1.0, 1.0 - closestGap / StoryPeerListTitleLayout.balanceRamp))
@@ -27,8 +30,8 @@ enum StoryPeerListTitleLayout {
     /// The title's left edge (with its lock and status) when the stories are expanded and it is alone on its row: placed
     /// between the buttons like the collapsed content, so a band the right buttons narrow (a proxy) does not put the
     /// title under them. Where it is clear of both sides this is the row's centre.
-    static func expandedTitleOrigin(containerWidth: CGFloat, titleWidth: CGFloat, minX: CGFloat, maxX: CGFloat) -> CGFloat {
-        return StoryPeerListTitleLayout.contentOrigin(containerWidth: containerWidth, contentWidth: titleWidth, minX: minX, maxX: maxX)
+    static func expandedTitleOrigin(containerWidth: CGFloat, titleWidth: CGFloat, minX: CGFloat, maxX: CGFloat, preferCentered: Bool = false) -> CGFloat {
+        return StoryPeerListTitleLayout.contentOrigin(containerWidth: containerWidth, contentWidth: titleWidth, minX: minX, maxX: maxX, preferCentered: preferCentered)
     }
 
     /// Whether the title's text fits, given the content's width with it.

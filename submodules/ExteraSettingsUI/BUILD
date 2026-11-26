@@ -6,7 +6,10 @@ swift_library(
     srcs = glob(["Sources/**/*.swift"]),
     deps = [
         "//submodules/AccountContext",
+        "//submodules/AppBundle:AppBundle",
         "//submodules/Display",
+        "//submodules/ComponentFlow",
+        "//submodules/TelegramUI/Components/ListItemSliderSelectorComponent",
         "//submodules/ExteraSettings",
         "//submodules/ItemListUI",
         "//submodules/PresentationDataUtils",

@@ -71,6 +71,7 @@ public final class ChatListHeaderComponent: Component {
     public let primaryContent: Content?
     public let secondaryContent: Content?
     public let secondaryTransition: CGFloat
+    public let preferCenteredTitle: Bool
     public let storySubscriptions: EngineStorySubscriptions?
     public let storiesIncludeHidden: Bool
     public let storiesFraction: CGFloat
@@ -98,6 +99,7 @@ public final class ChatListHeaderComponent: Component {
         primaryContent: Content?,
         secondaryContent: Content?,
         secondaryTransition: CGFloat,
+        preferCenteredTitle: Bool = false,
         storySubscriptions: EngineStorySubscriptions?,
         storiesIncludeHidden: Bool,
         storiesFraction: CGFloat,
@@ -118,6 +120,7 @@ public final class ChatListHeaderComponent: Component {
         self.secondaryContent = secondaryContent
         self.secondaryTransition = secondaryTransition
         self.context = context
+        self.preferCenteredTitle = preferCenteredTitle
         self.storySubscriptions = storySubscriptions
         self.storiesIncludeHidden = storiesIncludeHidden
         self.storiesFraction = storiesFraction
@@ -150,7 +153,7 @@ public final class ChatListHeaderComponent: Component {
         if lhs.secondaryTransition != rhs.secondaryTransition {
             return false
         }
-        if lhs.storySubscriptions != rhs.storySubscriptions {
+        if lhs.preferCenteredTitle != rhs.preferCenteredTitle || lhs.storySubscriptions != rhs.storySubscriptions {
             return false
         }
         if lhs.storiesIncludeHidden != rhs.storiesIncludeHidden {
@@ -432,6 +435,7 @@ public final class ChatListHeaderComponent: Component {
                         titleHasLock: primaryTitleHasLock,
                         titleHasActivity: primaryTitleHasActivity,
                         titlePeerStatus: primaryTitlePeerStatus,
+                        preferCenteredTitle: component.preferCenteredTitle,
                         minTitleX: navigationBarView.primaryCenterContentInsets.left,
                         maxTitleX: centeredContentFrame.width - navigationBarView.primaryCenterContentInsets.right,
                         useHiddenList: component.storiesIncludeHidden,

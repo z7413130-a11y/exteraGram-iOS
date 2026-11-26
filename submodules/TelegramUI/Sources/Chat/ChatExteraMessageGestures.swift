@@ -24,12 +24,17 @@ extension ChatControllerImpl {
             return true
         }
         interaction.exteraSwipe = { [weak self, weak interaction] message in
-            guard let self, let interaction else { return .none }
-            let configured = ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions))
-            if let action = configured.first(where: { self.canPerformExteraGesture($0, message: message, interaction: interaction) }) {
-                return action == .reply ? .reply : .extera(action.rawValue, symbol: action.symbol)
+            let actions: [ChatControllerInteractionSwipeAction]
+            if let self, let interaction {
+                actions = ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions))
+                    .filter { self.canPerformExteraGesture($0, message: message, interaction: interaction) }
+                    .map { $0 == .reply ? .reply : .extera($0.rawValue, symbol: $0.symbol) }
+            } else {
+                actions = []
             }
-            return .none
+            return ChatControllerExteraSwipeConfiguration(actions: actions,
+                wraps: store.value(for: ExteraPreferences.swipeActionsLoop),
+                reversesSelection: store.value(for: ExteraPreferences.swipeActionsReversed))
         }
         interaction.performExteraGesture = { [weak self, weak interaction] id, message in
             guard let self, let interaction, let action = ExteraMessageGestureAction(rawValue: id) else { return }
@@ -61,7 +66,8 @@ extension ChatControllerImpl {
         switch action {
         case .copy, .translate: return !message.text.isEmpty
         case .repeatText:
-            return interaction.canSendMessages() && !message.text.isEmpty && message.media.isEmpty &&
+            return interaction.canSendMessages() && self.presentationInterfaceState.slowmodeState == nil &&
+                self.presentationInterfaceState.subject != .scheduledMessages && !message.text.isEmpty && message.media.isEmpty &&
                 !message.attributes.contains(where: { $0 is TextEntitiesMessageAttribute || $0 is RichTextMessageAttribute })
         default: return true
         }
@@ -98,8 +104,15 @@ extension ChatControllerImpl {
                 }
             })
         case .repeatText:
-            self.presentExteraSendConfirmation(english: "Resend this text?", russian: "Отправить этот текст повторно?") { [weak interaction] in
-                interaction?.sendMessage(message.text, nil)
+            self.presentExteraSendConfirmation(english: "Resend this text?", russian: "Отправить этот текст повторно?") { [weak self, weak interaction] in
+                guard let self, let interaction, self.canPerformExteraGesture(.repeatText, message: message, interaction: interaction) else { return }
+                self.presentPaidMessageAlertIfNeeded(completion: { [weak self, weak interaction] postpone in
+                    guard let self, let interaction, self.canPerformExteraGesture(.repeatText, message: message, interaction: interaction) else { return }
+                    let resend = EnqueueMessage.message(text: message.text, attributes: [], inlineStickers: [:], mediaReference: nil,
+                        threadId: self.chatLocation.threadId, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil,
+                        correlationId: nil, bubbleUpEmojiOrStickersets: [])
+                    self.sendMessages([resend], postpone: postpone)
+                })
             }
         }
     }

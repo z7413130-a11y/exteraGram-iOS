@@ -1617,7 +1617,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                         case let .filter(idValue, text, unread):
                             id = AnyHashable(idValue)
                             title = HorizontalTabsComponent.Tab.Title(text: text.text, entities: text.entities, enableAnimations: text.enableAnimations)
-                            if unread.value != 0 {
+                            if unread.value != 0 && !ExteraAppearance.hidesUnreadCounters {
                                 badge = HorizontalTabsComponent.Tab.Badge(
                                     title: "\(unread.value)",
                                     isAccent: unread.hasUnmuted
@@ -1757,6 +1757,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 primaryContent: headerContent?.primaryContent,
                 secondaryContent: headerContent?.secondaryContent,
                 secondaryTransition: self.inlineStackContainerTransitionFraction,
+                preferCenteredTitle: ExteraSettingsStore.shared.value(for: ExteraPreferences.centerTitle),
                 storySubscriptions: effectiveStorySubscriptions,
                 storiesIncludeHidden: self.location == .chatList(groupId: .archive),
                 uploadProgress: self.controller?.storyUploadProgress ?? [:],

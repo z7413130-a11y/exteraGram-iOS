@@ -73,6 +73,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
     
     private var replyRecognizer: ChatSwipeToReplyRecognizer?
     public var currentSwipeAction: ChatControllerInteractionSwipeAction?
+    private var exteraSwipeConfiguration: ChatControllerExteraSwipeConfiguration?
     
     override public var visibility: ListViewItemNodeVisibility {
         didSet {
@@ -224,7 +225,14 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                     return false
                 }
                 
-                let action = item.controllerInteraction.exteraSwipe?(item.message) ?? item.controllerInteraction.canSetupReply(item.message)
+                let configuration = item.controllerInteraction.exteraSwipe?(item.message)
+                strongSelf.exteraSwipeConfiguration = configuration
+                let action: ChatControllerInteractionSwipeAction
+                if let configuration {
+                    action = configuration.actions.first ?? .none
+                } else {
+                    action = item.controllerInteraction.canSetupReply(item.message)
+                }
                 strongSelf.currentSwipeAction = action
                 if case .none = action {
                     return false
@@ -1125,6 +1133,18 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                 }
             
                 var translation = recognizer.translation(in: self.view)
+                if let configuration = self.exteraSwipeConfiguration, configuration.actions.count > 1 {
+                    let index = recognizer.updateActionSelection(translation: translation, horizontalThreshold: swipeOffset,
+                        actionCount: configuration.actions.count, wraps: configuration.wraps, reversed: configuration.reversesSelection)
+                    let action = configuration.actions[index]
+                    if action != self.currentSwipeAction {
+                        self.currentSwipeAction = action
+                        self.swipeToReplyNode?.updateAction(ChatMessageSwipeToReplyNode.Action(action))
+                        if self.playedSwipeToReplyHaptic {
+                            self.swipeToReplyFeedback?.impact(.light)
+                        }
+                    }
+                }
                 if translation.x < 0.0 {
                     translation.x = max(-80.0, min(0.0, -rubberBandingOffset(offset: abs(translation.x), bandingStart: swipeOffset)))
                 } else {

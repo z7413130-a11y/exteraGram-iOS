@@ -120,6 +120,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
     public private(set) var placeholderNode: StickerShimmerEffectNode
     public private(set) var animationNode: GenericAnimatedStickerNode?
     private var animationSize: CGSize?
+    private var exteraFreezesEmoji = false
     private var didSetUpAnimationNode = false
     private var isPlaying = false
     
@@ -178,6 +179,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
     
     private var replyRecognizer: ChatSwipeToReplyRecognizer?
     private var currentSwipeAction: ChatControllerInteractionSwipeAction?
+    private var exteraSwipeConfiguration: ChatControllerExteraSwipeConfiguration?
     
     private var wasPending: Bool = false
     private var didChangeFromPendingToSent: Bool = false
@@ -381,7 +383,14 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                     return false
                 }
                 
-                let action = item.controllerInteraction.exteraSwipe?(item.message) ?? item.controllerInteraction.canSetupReply(item.message)
+                let configuration = item.controllerInteraction.exteraSwipe?(item.message)
+                strongSelf.exteraSwipeConfiguration = configuration
+                let action: ChatControllerInteractionSwipeAction
+                if let configuration {
+                    action = configuration.actions.first ?? .none
+                } else {
+                    action = item.controllerInteraction.canSetupReply(item.message)
+                }
                 strongSelf.currentSwipeAction = action
                 if case .none = action {
                     return false
@@ -648,9 +657,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
         } else if let emojiFile = self.emojiFile {
             file = emojiFile
             
-            if ExteraSettingsStore.shared.value(for: ExteraPreferences.hideAnimatedEmoji) {
-                playbackMode = .still(.start)
-            } else if emojiFile.isCustomEmoji {
+            if emojiFile.isCustomEmoji {
                 playbackMode = .loop
             } else {
                 isEmoji = true
@@ -680,7 +687,15 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
             self.textNode.visibilityRect = subRect
         }
         
-        var canPlayEffects = isPlaying
+        let freezesEmoji = self.emojiFile != nil && ExteraSettingsStore.shared.value(for: ExteraPreferences.hideAnimatedEmoji)
+        if freezesEmoji {
+            playbackMode = .still(.start)
+        }
+        if self.exteraFreezesEmoji != freezesEmoji {
+            self.exteraFreezesEmoji = freezesEmoji
+            self.didSetUpAnimationNode = false
+        }
+        var canPlayEffects = isPlaying && !freezesEmoji
         if !item.controllerInteraction.canReadHistory {
             canPlayEffects = false
         }
@@ -2760,7 +2775,7 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                 } else if let emojiFile = self.emojiFile {
                     if let animationNode = self.animationNode as? AnimatedStickerNode, let _ = recognizer {
                         var shouldPlay = false
-                        if !animationNode.isPlaying && !emojiFile.isCustomEmoji {
+                        if !animationNode.isPlaying && !emojiFile.isCustomEmoji && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideAnimatedEmoji) {
                             shouldPlay = true
                         }
                         if let result = emojiTapAction(shouldPlay) {
@@ -2843,6 +2858,18 @@ public class ChatMessageAnimatedStickerItemNode: ChatMessageItemView {
                 self.item?.controllerInteraction.cancelInteractiveKeyboardGestures()
             case .changed:
                 var translation = recognizer.translation(in: self.view)
+                if let configuration = self.exteraSwipeConfiguration, configuration.actions.count > 1 {
+                    let index = recognizer.updateActionSelection(translation: translation, horizontalThreshold: swipeOffset,
+                        actionCount: configuration.actions.count, wraps: configuration.wraps, reversed: configuration.reversesSelection)
+                    let action = configuration.actions[index]
+                    if action != self.currentSwipeAction {
+                        self.currentSwipeAction = action
+                        self.swipeToReplyNode?.updateAction(ChatMessageSwipeToReplyNode.Action(action))
+                        if self.playedSwipeToReplyHaptic {
+                            self.swipeToReplyFeedback?.impact(.light)
+                        }
+                    }
+                }
                 func rubberBandingOffset(offset: CGFloat, bandingStart: CGFloat) -> CGFloat {
                     let bandedOffset = offset - bandingStart
                     if offset < bandingStart {

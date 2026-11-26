@@ -6,6 +6,14 @@ public class ChatSwipeToReplyRecognizer: UIPanGestureRecognizer {
     public var firstLocation: CGPoint = CGPoint()
     public var allowBothDirections: Bool = true
     
+    private var actionSelection = ExteraSwipeSelection()
+
+    public func updateActionSelection(translation: CGPoint, horizontalThreshold: CGFloat, actionCount: Int, wraps: Bool, reversed: Bool) -> Int {
+        let preferDown = self.view?.window.map { self.location(in: $0).y < $0.bounds.midY } ?? true
+        return self.actionSelection.update(translation: translation, horizontalThreshold: horizontalThreshold,
+            actionCount: actionCount, wraps: wraps, reversed: reversed, preferDown: preferDown)
+    }
+
     public var shouldBegin: (() -> Bool)?
     
     override public init(target: Any?, action: Selector?) {
@@ -18,6 +26,7 @@ public class ChatSwipeToReplyRecognizer: UIPanGestureRecognizer {
         super.reset()
         
         self.validatedGesture = false
+        self.actionSelection = ExteraSwipeSelection()
     }
     
     override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {

@@ -1,4 +1,5 @@
 import AccountContext
+import AppBundle
 import Display
 import ExteraSettings
 import Foundation
@@ -65,7 +66,7 @@ private struct SettingsRow: ItemListNodeEntry {
 
 private enum RowID: Int {
     case generalHeader, translation, targetLanguage, reset, appearanceHeader, appearance
-    case stories, counters, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, dividers, privateReactions, channelReactions, groupReactions
+    case stories, counters, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, centerTitle, dividers, privateReactions, channelReactions, groupReactions
     case chatsHeader, details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, pluginsHeader, plugins, otherHeader, about
 }
 
@@ -77,6 +78,7 @@ private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String,
     case .animatedEmoji: return (strings.text("Freeze large animated emoji", "Остановить анимацию крупных эмодзи"), ExteraPreferences.hideAnimatedEmoji)
     case .tail: return (strings.text("Hide message tails", "Скрыть хвостики сообщений"), ExteraPreferences.removeMessageTail)
     case .edited: return (strings.text("Show an icon for edited messages", "Показывать значок у изменённых сообщений"), ExteraPreferences.replaceEditedWithIcon)
+    case .centerTitle: return (strings.text("Keep the chat list title centered", "Центрировать заголовок списка чатов"), ExteraPreferences.centerTitle)
     case .search: return (strings.text("Hide the chat list search bar", "Скрыть строку поиска в списке чатов"), ExteraPreferences.hideDialogsSearchBar)
     case .privateReactions: return (strings.text("Hide reactions in private chats", "Скрыть реакции в личных чатах"), ExteraPreferences.hideReactionsInPrivateChats)
     case .channelReactions: return (strings.text("Hide reactions in channels", "Скрыть реакции в каналах"), ExteraPreferences.hideReactionsInChannels)
@@ -117,13 +119,12 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
         case .dividers:
             if let value { store.set(value ? 0 : 1, for: ExteraPreferences.dividerStyle) }
         case .avatarCorners:
-            settingsController?.push(exteraChoiceController(context: context, title: strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"),
-                selectedIndex: { [0, 7, 14, 21, 28].firstIndex(of: store.value(for: ExteraPreferences.avatarCorners)) },
-                titles: ["0%", "25%", "50%", "75%", "100%"], select: { store.set([0, 7, 14, 21, 28][$0], for: ExteraPreferences.avatarCorners) }))
+            settingsController?.push(exteraSliderController(context: context, title: strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"),
+                preference: ExteraPreferences.avatarCorners, limits: 0...28, rangeLabels: ("0%", "100%")))
         case .stickerSize:
-            settingsController?.push(exteraChoiceController(context: context, title: strings.text("Sticker size", "Размер стикеров"),
-                selectedIndex: { [6, 9, 12, 15, 18].firstIndex(of: store.value(for: ExteraPreferences.stickerSize)) },
-                titles: ["75%", "87.5%", "100%", "112.5%", "125%"], select: { store.set([6, 9, 12, 15, 18][$0], for: ExteraPreferences.stickerSize) }))
+            settingsController?.push(exteraSliderController(context: context, title: strings.text("Sticker size", "Размер стикеров"),
+                preference: ExteraPreferences.stickerSize, limits: 4...20,
+                rangeLabels: (strings.text("Smaller", "Меньше"), strings.text("Larger", "Больше"))))
         case .confirmSticker:
             if let value { store.set(value, for: ExteraPreferences.confirmStickerSend) }
         case .confirmGif:
@@ -143,11 +144,7 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
                 titles: choices.map { $0.title(strings) },
                 select: { store.set(choices[$0].doubleTapSetting(outgoing: outgoing), for: preference) }))
         case .swipe:
-            let choices = ExteraMessageGestureAction.allCases
-            settingsController?.push(exteraChoiceController(context: context, title: gestureRowTitle(row, strings),
-                selectedIndex: { choices.firstIndex(of: .swipeActions(store.value(for: ExteraPreferences.swipeActions)).first ?? .disabled) },
-                titles: choices.map { $0.title(strings) },
-                select: { store.set(choices[$0] == .disabled ? "" : String(choices[$0].rawValue), for: ExteraPreferences.swipeActions) }))
+            settingsController?.push(exteraSwipeController(context: context))
         case .translation:
             if let value { store.set(value, for: ExteraPreferences.translateDrafts) }
         case .targetLanguage:
@@ -184,7 +181,7 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
         func row(_ id: RowID, _ section: ExteraSettingsCategory, _ title: String, _ kind: SettingsRow.Kind) -> SettingsRow {
             return SettingsRow(stableId: id.rawValue, section: section.rawValue, title: title, kind: kind)
         }
-        let appearanceRows: [RowID] = [.stories, .counters, .callsTab, .premium, .animatedEmoji, .avatarCorners, .stickerSize, .tail, .edited, .search, .dividers, .privateReactions, .channelReactions, .groupReactions]
+        let appearanceRows: [RowID] = [.stories, .counters, .callsTab, .premium, .animatedEmoji, .avatarCorners, .stickerSize, .tail, .edited, .search, .centerTitle, .dividers, .privateReactions, .channelReactions, .groupReactions]
         let appearanceItems = appearanceRows.compactMap { id -> SettingsRow? in
             if let (title, preference) = appearanceToggle(id, strings) {
                 return row(id, .appearance, title, .toggle(store.value(for: preference)))
@@ -222,7 +219,7 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
             row(.doubleTapOutgoing, .chats, gestureRowTitle(.doubleTapOutgoing, strings),
                 .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapActionOutOwner), outgoing: true).title(strings))),
             row(.swipe, .chats, gestureRowTitle(.swipe, strings),
-                .disclosure((ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions)).first ?? .disabled).title(strings))),
+                .disclosure(exteraSwipeValue(store, strings))),
             row(.pluginsHeader, .plugins, strings.category(.plugins), .header),
             row(.plugins, .plugins, strings.text("Android plugins are unavailable in the iOS port.", "Плагины Android недоступны в iOS-порте."), .note),
             row(.otherHeader, .other, strings.category(.other), .header),
@@ -318,6 +315,51 @@ private func exteraChoiceController(context: AccountContext, title: String, sele
             SettingsRow(stableId: index, section: 0, title: label, kind: .language(index == selected))
         }
         return (ItemListControllerState(presentationData: data, title: .text(title),
+            leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
+            (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
+    }
+    return ItemListController(context: context, state: state)
+}
+
+private func exteraSwipeValue(_ store: ExteraSettingsStore, _ strings: ExteraStrings) -> String {
+    let actions = ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions))
+    if actions.count > 1 { return String(actions.count) }
+    return (actions.first ?? .disabled).title(strings)
+}
+
+private func exteraSwipeController(context: AccountContext) -> ViewController {
+    let store = ExteraSettingsStore.shared
+    let action: (Int, Bool?) -> Void = { id, enabled in
+        guard let enabled else { return }
+        switch id {
+        case 100:
+            store.set(enabled, for: ExteraPreferences.swipeActionsLoop)
+        case 101:
+            store.set(enabled, for: ExteraPreferences.swipeActionsReversed)
+        default:
+            guard let gesture = ExteraMessageGestureAction(rawValue: id), gesture != .disabled else { return }
+            var actions = ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions))
+            actions.removeAll(where: { $0 == gesture })
+            if enabled { actions.append(gesture) }
+            store.set(actions.map { String($0.rawValue) }.joined(separator: ","), for: ExteraPreferences.swipeActions)
+        }
+    }
+    let state = combineLatest(context.sharedContext.presentationData, store.changes)
+    |> map { presentation, _ -> (ItemListControllerState, (ItemListNodeState, (Int, Bool?) -> Void)) in
+        let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
+        let data = ItemListPresentationData(presentation)
+        let actions = ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions))
+        let rows = [
+            SettingsRow(stableId: 0, section: 0, title: strings.text("Enable actions in the order you want them. Swipe left, then move vertically to choose.", "Включай действия в нужном порядке. Проведи влево, затем двигай палец вверх или вниз для выбора."), kind: .note),
+        ] + ExteraMessageGestureAction.allCases.filter { $0 != .disabled }.map { gesture in
+            let rank = actions.firstIndex(of: gesture)
+            let title = rank.map { "\($0 + 1). " } ?? ""
+            return SettingsRow(stableId: gesture.rawValue, section: 1, title: title + gesture.title(strings), kind: .toggle(rank != nil))
+        } + [
+            SettingsRow(stableId: 100, section: 2, title: strings.text("Wrap around", "Листать по кругу"), kind: .toggle(store.value(for: ExteraPreferences.swipeActionsLoop))),
+            SettingsRow(stableId: 101, section: 2, title: strings.text("Reverse selection", "Обратный выбор"), kind: .toggle(store.value(for: ExteraPreferences.swipeActionsReversed))),
+        ]
+        return (ItemListControllerState(presentationData: data, title: .text(gestureRowTitle(.swipe, strings)),
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
     }
