@@ -47,9 +47,10 @@ public struct ChatInterfacePollActionState: Equatable {
     }
 }
 
-public enum ChatControllerInteractionSwipeAction {
+public enum ChatControllerInteractionSwipeAction: Equatable {
     case none
     case reply
+    case extera(Int, symbol: String)
 }
 
 public enum ChatControllerInteractionReaction {
@@ -261,6 +262,9 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let openCheckoutOrReceipt: (EngineMessage.Id, OpenMessageParams?) -> Void
     public let openSearch: () -> Void
     public let setupReply: (EngineMessage.Id) -> Void
+    public var exteraDoubleTap: ((EngineRawMessage) -> Bool)?
+    public var exteraSwipe: ((EngineRawMessage) -> ChatControllerInteractionSwipeAction)?
+    public var performExteraGesture: ((Int, EngineRawMessage) -> Void)?
     public let canSetupReply: (EngineRawMessage) -> ChatControllerInteractionSwipeAction
     public let canSendMessages: () -> Bool
     public let navigateToFirstDateMessage: (Int32, Bool) -> Void

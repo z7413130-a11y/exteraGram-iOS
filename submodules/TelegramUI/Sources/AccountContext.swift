@@ -1,3 +1,4 @@
+import ExteraSettings
 import PasscodeCore
 import PasscodeUI
 import LocalAuthentication
@@ -1009,6 +1010,22 @@ public final class AccountContextImpl: AccountContext {
     }
     
     public func requestCall(peerId: EnginePeer.Id, isVideo: Bool, completion: @escaping () -> Void) {
+        guard ExteraSettingsStore.shared.value(for: ExteraPreferences.confirmCall) else {
+            self.requestConfirmedCall(peerId: peerId, isVideo: isVideo, completion: completion)
+            return
+        }
+        let presentation = self.sharedContext.currentPresentationData.with { $0 }
+        let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
+        let title = isVideo ? strings.text("Start a video call?", "Начать видеозвонок?") : strings.text("Start a call?", "Позвонить?")
+        self.sharedContext.mainWindow?.present(textAlertController(context: self, title: title, text: "", actions: [
+            TextAlertAction(type: .genericAction, title: presentation.strings.Common_Cancel, action: {}),
+            TextAlertAction(type: .defaultAction, title: strings.text("Call", "Позвонить"), action: { [weak self] in
+                self?.requestConfirmedCall(peerId: peerId, isVideo: isVideo, completion: completion)
+            }),
+        ]), on: .root)
+    }
+
+    private func requestConfirmedCall(peerId: EnginePeer.Id, isVideo: Bool, completion: @escaping () -> Void) {
         guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {
             return
         }

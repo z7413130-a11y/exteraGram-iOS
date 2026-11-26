@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UniformTypeIdentifiers
 import UIKit
@@ -2677,7 +2678,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             attachmentButtonX = -8.0 - leftButtonsWidth
         }
         
-        self.mediaActionButtons.micButton.updateMode(mode: interfaceState.interfaceState.mediaRecordingMode, animated: transition.isAnimated)
+        let recordingMode = ExteraSettingsStore.shared.value(for: ExteraPreferences.hideVideoRecording) ? .audio : interfaceState.interfaceState.mediaRecordingMode
+        self.mediaActionButtons.micButton.updateMode(mode: recordingMode, animated: transition.isAnimated)
         
         // The layout below reserves the send slot and scales the send button in on exactly this condition.
         let sendButtonIsLaidOut = inputHasText || hasMediaDraft || hasForward || isEditingMedia

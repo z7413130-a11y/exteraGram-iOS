@@ -19,6 +19,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/ExteraSettings",
         "//submodules/Display",
         "//submodules/AsyncDisplayKit",
         "//submodules/SSignalKit/SwiftSignalKit",

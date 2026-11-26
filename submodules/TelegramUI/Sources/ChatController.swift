@@ -2506,7 +2506,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 shouldAnimateMessageTransition = true
             }
             
-            strongSelf.presentPaidMessageAlertIfNeeded(completion: { [weak strongSelf] postpone in
+            strongSelf.withExteraPaidMediaConfirmation(ExteraPreferences.confirmStickerSend, english: "Send sticker?", russian: "Отправить стикер?", completion: { [weak strongSelf] postpone in
                 guard let strongSelf else {
                     return
                 }
@@ -2762,7 +2762,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     }
                 }
                 
-                strongSelf.presentPaidMessageAlertIfNeeded(completion: { [weak self] postpone in
+                strongSelf.withExteraPaidMediaConfirmation(ExteraPreferences.confirmGifSend, english: "Send GIF?", russian: "Отправить GIF?", completion: { [weak self] postpone in
                     guard let strongSelf = self else {
                         return
                     }
@@ -2818,7 +2818,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                 }
             }
             
-            strongSelf.enqueueChatContextResult(collection, result, hideVia: true, closeMediaInput: true, silentPosting: silentPosting, resetTextInputState: resetTextInputState)
+            strongSelf.withExteraMediaConfirmation(ExteraPreferences.confirmGifSend, english: "Send GIF?", russian: "Отправить GIF?") {
+                strongSelf.enqueueChatContextResult(collection, result, hideVia: true, closeMediaInput: true, silentPosting: silentPosting, resetTextInputState: resetTextInputState)
+            }
             
             return true
         }, editGif: { [weak self] file, addCaption in
@@ -6150,6 +6152,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
         controllerInteraction.enableFullTranslucency = context.sharedContext.energyUsageSettings.fullTranslucency
         
         self.controllerInteraction = controllerInteraction
+        self.installExteraMessageGestures(on: controllerInteraction)
         controllerInteraction.requestWalletTransferArrival = { [weak self] message in
             self?.walletTransferAnimationCoordinator().requestArrival(message)
         }

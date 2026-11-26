@@ -2535,7 +2535,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             let strings = ExteraStrings(languageCode: chatPresentationInterfaceState.strings.baseLanguageCode)
             actions.append(.action(ContextMenuActionItem(text: strings.messageDetails, icon: { _ in nil }, action: { c, _ in
                 c?.dismiss(completion: {
-                    controllerInteraction.presentController(exteraMessageDetailsController(context: context, message: message), nil)
+                    controllerInteraction.presentController(exteraMessageDetailsController(context: context, message: message, canCopyId: !chatPresentationInterfaceState.copyProtectionEnabled && !message.isCopyProtected() && !message.containsSecretMedia), nil)
                 })
             })))
         }

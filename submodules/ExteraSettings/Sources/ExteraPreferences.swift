@@ -87,7 +87,7 @@ public enum ExteraPreferences {
     public static let hideReactionsInGroups = ExteraPreference<Bool>("hideReactionsInGroups", .chats, false)
     public static let doubleTapAction = ExteraPreference<Int>("doubleTapAction", .chats, 1)
     public static let doubleTapActionOutOwner = ExteraPreference<Int>("doubleTapActionOutOwner", .chats, 1)
-    public static let swipeActions = ExteraPreference<String>("swipeActions", .chats, "1")
+    public static let swipeActions = ExteraPreference<String>("swipeActions", .chats, "2")
     public static let swipeActionsLoop = ExteraPreference<Bool>("swipeActionsLoop", .chats, false)
     public static let swipeActionsReversed = ExteraPreference<Bool>("swipeActionsReversed", .chats, false)
     public static let bottomButton = ExteraPreference<Int>("bottomButton", .chats, 2)

@@ -224,7 +224,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                     return false
                 }
                 
-                let action = item.controllerInteraction.canSetupReply(item.message)
+                let action = item.controllerInteraction.exteraSwipe?(item.message) ?? item.controllerInteraction.canSetupReply(item.message)
                 strongSelf.currentSwipeAction = action
                 if case .none = action {
                     return false
@@ -986,8 +986,13 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                     case let .optionalAction(f):
                         f()
                     case .openContextMenu:
+                        if let item = self.item, case .doubleTap = gesture, item.controllerInteraction.exteraDoubleTap?(item.message) == true {
+                            return
+                        }
                         break
                     }
+                } else if case .doubleTap = gesture, let item = self.item {
+                    let _ = item.controllerInteraction.exteraDoubleTap?(item.message)
                 } else if case .tap = gesture {
                     self.item?.controllerInteraction.clickThroughMessage(self.view, location)
                 }
@@ -1184,6 +1189,8 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                                 break
                             case .reply:
                                 item.controllerInteraction.setupReply(item.message.id)
+                            case let .extera(id, _):
+                                item.controllerInteraction.performExteraGesture?(id, item.message)
                             }
                         }
                     }

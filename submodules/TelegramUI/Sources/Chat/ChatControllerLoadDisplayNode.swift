@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import SwiftSignalKit
@@ -2624,7 +2625,8 @@ extension ChatControllerImpl {
                     }
                 })
             }
-        }, beginMediaRecording: { [weak self] isVideo in
+        }, beginMediaRecording: { [weak self] requestedVideo in
+            let isVideo = requestedVideo && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideVideoRecording)
             guard let strongSelf = self else {
                 return
             }
@@ -2964,7 +2966,7 @@ extension ChatControllerImpl {
                 tooltipController.dismissImmediately()
             }
         }, switchMediaRecordingMode: { [weak self] in
-            guard let strongSelf = self else {
+            guard let strongSelf = self, !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideVideoRecording) else {
                 return
             }
             

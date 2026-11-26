@@ -1,3 +1,4 @@
+import ExteraSettings
 import Foundation
 import UIKit
 import Display
@@ -107,6 +108,7 @@ func infoItems(
         let ItemAbout = 3003
         let ItemNote = 3004
         let ItemAppFooter = 3005
+        let ItemExteraUserId = 3006
         let ItemAffiliate = 4000
         let ItemAffiliateInfo = 4001
         let ItemBusinessHours = 5000
@@ -192,6 +194,14 @@ func infoItems(
             }, requestLayout: { animated in
                 interaction.requestLayout(animated)
             }))
+        }
+        if ExteraSettingsStore.shared.value(for: ExteraPreferences.showIdAndDc) != 0 {
+            let strings = ExteraStrings(languageCode: presentationData.strings.baseLanguageCode)
+            let identifier = String(user.id.id._internalGetInt64Value())
+            let copy: () -> Void = { UIPasteboard.general.string = identifier }
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemExteraUserId,
+                label: strings.text("User ID", "ID пользователя"), text: identifier, textColor: .accent,
+                action: { _, _ in copy() }, requestLayout: { interaction.requestLayout($0) }))
         }
         if let mainUsername = user.addressName {
             var additionalUsernames: String?

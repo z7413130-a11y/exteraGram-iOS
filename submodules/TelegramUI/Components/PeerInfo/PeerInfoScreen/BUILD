@@ -10,6 +10,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/ExteraSettings",
         "//submodules/ExteraSettingsUI",
         "//submodules/UrlWhitelist",
         "//submodules/TelegramUI/Components/NavigationBarNode",

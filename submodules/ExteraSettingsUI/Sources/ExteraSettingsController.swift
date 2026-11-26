@@ -66,7 +66,7 @@ private struct SettingsRow: ItemListNodeEntry {
 private enum RowID: Int {
     case generalHeader, translation, targetLanguage, reset, appearanceHeader, appearance
     case stories, counters, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, dividers, privateReactions, channelReactions, groupReactions
-    case chatsHeader, details, hideShare, pluginsHeader, plugins, otherHeader, about
+    case chatsHeader, details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, pluginsHeader, plugins, otherHeader, about
 }
 
 private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String, ExteraPreference<Bool>)? {
@@ -82,6 +82,14 @@ private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String,
     case .channelReactions: return (strings.text("Hide reactions in channels", "Скрыть реакции в каналах"), ExteraPreferences.hideReactionsInChannels)
     case .groupReactions: return (strings.text("Hide reactions in groups", "Скрыть реакции в группах"), ExteraPreferences.hideReactionsInGroups)
     default: return nil
+    }
+}
+
+private func gestureRowTitle(_ row: RowID, _ strings: ExteraStrings) -> String {
+    switch row {
+    case .doubleTapIncoming: return strings.text("Double tap on incoming messages", "Двойное нажатие на входящих")
+    case .doubleTapOutgoing: return strings.text("Double tap on outgoing messages", "Двойное нажатие на исходящих")
+    default: return strings.text("Message swipe", "Свайп по сообщению")
     }
 }
 
@@ -116,6 +124,30 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
             settingsController?.push(exteraChoiceController(context: context, title: strings.text("Sticker size", "Размер стикеров"),
                 selectedIndex: { [6, 9, 12, 15, 18].firstIndex(of: store.value(for: ExteraPreferences.stickerSize)) },
                 titles: ["75%", "87.5%", "100%", "112.5%", "125%"], select: { store.set([6, 9, 12, 15, 18][$0], for: ExteraPreferences.stickerSize) }))
+        case .confirmSticker:
+            if let value { store.set(value, for: ExteraPreferences.confirmStickerSend) }
+        case .confirmGif:
+            if let value { store.set(value, for: ExteraPreferences.confirmGifSend) }
+        case .confirmCall:
+            if let value { store.set(value, for: ExteraPreferences.confirmCall) }
+        case .hideVideoRecording:
+            if let value { store.set(value, for: ExteraPreferences.hideVideoRecording) }
+        case .showUserId:
+            if let value { store.set(value ? 1 : 0, for: ExteraPreferences.showIdAndDc) }
+        case .doubleTapIncoming, .doubleTapOutgoing:
+            let outgoing = row == .doubleTapOutgoing
+            let preference = outgoing ? ExteraPreferences.doubleTapActionOutOwner : ExteraPreferences.doubleTapAction
+            let choices = ExteraMessageGestureAction.allCases.filter { outgoing || $0 != .edit }
+            settingsController?.push(exteraChoiceController(context: context, title: gestureRowTitle(row, strings),
+                selectedIndex: { choices.firstIndex(of: .doubleTap(setting: store.value(for: preference), outgoing: outgoing)) },
+                titles: choices.map { $0.title(strings) },
+                select: { store.set(choices[$0].doubleTapSetting(outgoing: outgoing), for: preference) }))
+        case .swipe:
+            let choices = ExteraMessageGestureAction.allCases
+            settingsController?.push(exteraChoiceController(context: context, title: gestureRowTitle(row, strings),
+                selectedIndex: { choices.firstIndex(of: .swipeActions(store.value(for: ExteraPreferences.swipeActions)).first ?? .disabled) },
+                titles: choices.map { $0.title(strings) },
+                select: { store.set(choices[$0] == .disabled ? "" : String(choices[$0].rawValue), for: ExteraPreferences.swipeActions) }))
         case .translation:
             if let value { store.set(value, for: ExteraPreferences.translateDrafts) }
         case .targetLanguage:
@@ -180,6 +212,17 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
             row(.chatsHeader, .chats, strings.category(.chats), .header),
             row(.details, .chats, strings.messageDetails, .toggle(store.value(for: ExteraPreferences.showDetailsButton))),
             row(.hideShare, .chats, strings.text("Hide share button", "Скрыть кнопку «Поделиться»"), .toggle(store.value(for: ExteraPreferences.hideShareButton))),
+            row(.confirmSticker, .chats, strings.text("Confirm sticker sends", "Подтверждать отправку стикеров"), .toggle(store.value(for: ExteraPreferences.confirmStickerSend))),
+            row(.confirmGif, .chats, strings.text("Confirm GIF sends", "Подтверждать отправку GIF"), .toggle(store.value(for: ExteraPreferences.confirmGifSend))),
+            row(.confirmCall, .chats, strings.text("Confirm calls", "Подтверждать звонки"), .toggle(store.value(for: ExteraPreferences.confirmCall))),
+            row(.hideVideoRecording, .chats, strings.text("Hide video message recording", "Скрыть запись видеосообщений"), .toggle(store.value(for: ExteraPreferences.hideVideoRecording))),
+            row(.showUserId, .chats, strings.text("Show copyable user IDs", "Показывать ID пользователя для копирования"), .toggle(store.value(for: ExteraPreferences.showIdAndDc) != 0)),
+            row(.doubleTapIncoming, .chats, gestureRowTitle(.doubleTapIncoming, strings),
+                .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapAction), outgoing: false).title(strings))),
+            row(.doubleTapOutgoing, .chats, gestureRowTitle(.doubleTapOutgoing, strings),
+                .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapActionOutOwner), outgoing: true).title(strings))),
+            row(.swipe, .chats, gestureRowTitle(.swipe, strings),
+                .disclosure((ExteraMessageGestureAction.swipeActions(store.value(for: ExteraPreferences.swipeActions)).first ?? .disabled).title(strings))),
             row(.pluginsHeader, .plugins, strings.category(.plugins), .header),
             row(.plugins, .plugins, strings.text("Android plugins are unavailable in the iOS port.", "Плагины Android недоступны в iOS-порте."), .note),
             row(.otherHeader, .other, strings.category(.other), .header),

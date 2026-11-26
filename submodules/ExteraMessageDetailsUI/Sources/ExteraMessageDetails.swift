@@ -1,3 +1,4 @@
+import UIKit
 import AccountContext
 import Display
 import ExteraSettings
@@ -7,7 +8,7 @@ import TelegramCore
 
 /// Metadata already available in the local message. The details do not fetch
 /// more information or expose an edit marker hidden by the server.
-public func exteraMessageDetailsController(context: AccountContext, message: EngineRawMessage) -> ViewController {
+public func exteraMessageDetailsController(context: AccountContext, message: EngineRawMessage, canCopyId: Bool) -> ViewController {
     let presentation = context.sharedContext.currentPresentationData.with { $0 }
     let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
     let formatter = DateFormatter()
@@ -34,8 +35,14 @@ public func exteraMessageDetailsController(context: AccountContext, message: Eng
         }
     }
 
+    var actions = [TextAlertAction(type: .genericAction, title: presentation.strings.Common_OK, action: {})]
+    if canCopyId {
+        actions.append(TextAlertAction(type: .defaultAction, title: strings.text("Copy message ID", "Копировать ID сообщения"), action: {
+            UIPasteboard.general.string = String(message.id.id)
+        }))
+    }
     return textAlertController(
         context: context, title: strings.messageDetails, text: lines.joined(separator: "\n"),
-        actions: [TextAlertAction(type: .defaultAction, title: presentation.strings.Common_OK, action: {})]
+        actions: actions
     )
 }
