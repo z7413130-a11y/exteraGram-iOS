@@ -52,6 +52,19 @@ jobs:
           test "$("$bazel_bin" --version)" = "bazel $bazel_version"
           echo "BAZEL_BIN=$bazel_bin" >> "$GITHUB_ENV"
 
+      - name: Validate iPhone and iPad icons before Bazel compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          minimum_ios=$(sed -nE 's/^minimum_os_version = "([0-9.]+)"$/\1/p' Telegram/BUILD)
+          test -n "$minimum_ios"
+          output="$RUNNER_TEMP/extera-icon-check"
+          mkdir -p "$output"
+          xcrun --sdk iphoneos actool --compile "$output" --errors --warnings \
+            --output-format human-readable-text --platform iphoneos --minimum-deployment-target "$minimum_ios" \
+            --compress-pngs --app-icon ExteraGram --target-device iphone --target-device ipad \
+            --output-partial-info-plist "$output/Info.plist" Telegram/Telegram-iOS/AppIcons.xcassets
+
       - name: Load pinned submodules recursively
         id: submodules
         shell: bash
@@ -171,13 +184,14 @@ jobs:
               cmd += ['--cacheDir', str(root / 'public-webrtc-action-cache')]
           elif mode == 'swift':
               cmd += ['--cacheDir', str(root / 'public-swift-action-cache')]
+          elif mode == 'build':
+              cmd += ['--cacheDir', str(root / 'private-device-action-cache')]
           cmd += ['build', '--configurationPath', str(path), '--xcodeManagedCodesigning',
                   '--buildNumber', os.environ['PORT_BUILD_NUMBER'], '--configuration', 'debug_arm64']
           if mode == 'warm':
               cmd += ['--target', '//Telegram:webrtc_build_test']
           elif mode == 'swift':
               cmd += ['--target', '//Telegram:TelegramUIFramework']
-          if mode in ('swift', 'build'):
               cmd += ['--continueOnError']
           rc = Path.home() / '.bazelrc'
           previous_rc = rc.read_bytes()
@@ -185,11 +199,12 @@ jobs:
               if mode == 'analysis':
                   rc.write_bytes(previous_rc + b'\nbuild --nobuild\nbuild --keep_going\n')
               elif mode == 'swift':
-                  # Materialize cache hits so the private build can reuse them in the same output base.
                   rc.write_bytes(previous_rc + b'\nbuild --remote_download_outputs=all\n'
                                  b'build --output_groups=-dossier,-dsyms\n'
                                  b'build --experimental_disk_cache_gc_max_size=4G\n'
                                  b'build --experimental_disk_cache_gc_idle_delay=1s\n')
+              elif mode == 'build':
+                  rc.write_bytes(previous_rc + b'\nbuild --remote_download_outputs=all\n')
               proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
               for line in proc.stdout:
                   if re.search(r'(?i)\b(?:telegram_|app_config_)?api_?(?:id|hash)\b', line):
@@ -201,7 +216,7 @@ jobs:
                   print(line, end='', flush=True)
               status = proc.wait()
           finally:
-              if mode in ('analysis', 'swift'):
+              if mode != 'warm':
                   rc.write_bytes(previous_rc)
           sys.exit(status)
           PY
@@ -253,6 +268,7 @@ jobs:
 
       - name: Prepare WebRTC compilation outputs with no real API data
         id: webrtc-warm
+        if: inputs.swift_preflight_only
         continue-on-error: true
         shell: bash
         run: python3 -u "$RUNNER_TEMP/device-build.py" warm
@@ -280,10 +296,6 @@ jobs:
           path: ${{ runner.temp }}/public-webrtc-action-cache
           key: ${{ steps.webrtc-cache-key.outputs.key }}
 
-      - name: Release the temporary WebRTC cache directory
-        shell: bash
-        run: rm -rf "$RUNNER_TEMP/public-webrtc-action-cache"
-
       - name: Compute the public Swift action cache key
         id: swift-cache-key
         shell: bash
@@ -296,7 +308,9 @@ jobs:
           sdk_build=$(xcrun --sdk iphoneos --show-sdk-build-version)
           test -n "$xcode_build"
           test -n "$sdk_build"
-          prefix="swift-ios-arm64-bazel-9.2.0-v2-${xcode_build}-${sdk_build}-${SUBMODULE_FINGERPRINT}-${BUILD_SETTINGS_HASH}-"
+          family="swift-ios-arm64-bazel-9.2.0-v2-${xcode_build}-${sdk_build}-${SUBMODULE_FINGERPRINT}-"
+          prefix="${family}${BUILD_SETTINGS_HASH}-"
+          echo "family=$family" >> "$GITHUB_OUTPUT"
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
 
       - name: Restore public Swift compilation outputs
@@ -310,15 +324,17 @@ jobs:
           restore-keys: |
             ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-
             ${{ steps.swift-cache-key.outputs.prefix }}
+            ${{ steps.swift-cache-key.outputs.family }}
 
       - name: Check Swift modules for ARM64 without packaging an IPA
         id: swift-preflight
+        if: inputs.swift_preflight_only
         shell: bash
         run: python3 -u "$RUNNER_TEMP/device-build.py" swift
 
       - name: Stop Bazel and bound the public Swift cache before saving
         id: swift-cache-budget
-        if: ${{ !cancelled() && (steps.swift-preflight.outcome == 'success' || steps.swift-preflight.outcome == 'failure') }}
+        if: ${{ !cancelled() && inputs.swift_preflight_only && (steps.swift-preflight.outcome == 'success' || steps.swift-preflight.outcome == 'failure') }}
         continue-on-error: true
         shell: bash
         run: |
@@ -330,7 +346,7 @@ jobs:
           python3 build-system/Make/BoundPublicActionCache.py "$cache" "$GITHUB_OUTPUT"
 
       - name: Save public Swift results even when typechecking failed
-        if: ${{ !cancelled() && steps.swift-cache-budget.outputs.save == 'true' }}
+        if: ${{ !cancelled() && inputs.swift_preflight_only && steps.swift-cache-budget.outputs.save == 'true' }}
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         continue-on-error: true
         with:
@@ -339,10 +355,30 @@ jobs:
             ${{ runner.temp }}/public-swift-action-cache/cas
           key: ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: Remove the public Swift cache before any private steps
-        if: ${{ !cancelled() }}
+      - name: Stage restored Bazel results in a runner-local cache for the device build
+        if: ${{ !inputs.swift_preflight_only }}
         shell: bash
-        run: rm -rf "$RUNNER_TEMP/public-swift-action-cache"
+        run: |
+          set -euo pipefail
+          umask 077
+          swift="$RUNNER_TEMP/public-swift-action-cache"
+          webrtc="$RUNNER_TEMP/public-webrtc-action-cache"
+          private="$RUNNER_TEMP/private-device-action-cache"
+          # Bazel can write to its disk cache. No cache action uploads this path.
+          test ! -e "$private"
+          if [[ -d "$swift" ]]; then
+            mv "$swift" "$private"
+          else
+            mkdir "$private"
+          fi
+          chmod 700 "$private"
+          for store in ac cas; do
+            if [[ -d "$webrtc/$store" ]]; then
+              mkdir -p "$private/$store"
+              /usr/bin/rsync -a --ignore-existing "$webrtc/$store/" "$private/$store/"
+            fi
+          done
+          rm -rf "$webrtc"
 
       - name: Configure API credentials for the final archive
         if: ${{ !inputs.swift_preflight_only }}
@@ -355,6 +391,7 @@ jobs:
           umask 077
           test ! -e "$RUNNER_TEMP/public-webrtc-action-cache"
           test ! -e "$RUNNER_TEMP/public-swift-action-cache"
+          test -d "$RUNNER_TEMP/private-device-action-cache"
           python3 - <<'PY'
           import json, os, re, sys
           from pathlib import Path
@@ -621,6 +658,8 @@ jobs:
         shell: bash
         run: |
           rm -f "$RUNNER_TEMP/device-configuration.json" "$RUNNER_TEMP/device-build.py" "$GITHUB_WORKSPACE/build-input/configuration-repository/variables.bzl"
-          rm -rf "$RUNNER_TEMP/device-audit"
+          rm -rf "$RUNNER_TEMP/device-audit" "$RUNNER_TEMP/extera-icon-check" \
+            "$RUNNER_TEMP/private-device-action-cache" "$RUNNER_TEMP/public-swift-action-cache" \
+            "$RUNNER_TEMP/public-webrtc-action-cache"
           df -h "$GITHUB_WORKSPACE"
           vm_stat
