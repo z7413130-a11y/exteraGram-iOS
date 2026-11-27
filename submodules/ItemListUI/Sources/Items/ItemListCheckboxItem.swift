@@ -39,12 +39,13 @@ public class ItemListCheckboxItem: ListViewItem, ItemListItem {
     let checked: Bool
     let enabled: Bool
     let zeroSeparatorInsets: Bool
+    let maximumNumberOfLines: Int
     public let sectionId: ItemListSectionId
     let action: () -> Void
     let deleteAction: (() -> Void)?
     public let tag: Any?
     
-    public init(presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .legacy, icon: UIImage? = nil, iconSize: CGSize? = nil, iconPlacement: IconPlacement = .default, title: String, subtitle: String? = nil, style: ItemListCheckboxItemStyle, color: ItemListCheckboxItemColor = .accent, textColor: TextColor = .primary, checked: Bool, enabled: Bool = true, zeroSeparatorInsets: Bool, sectionId: ItemListSectionId, action: @escaping () -> Void, deleteAction: (() -> Void)? = nil, tag: Any? = nil) {
+    public init(presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .legacy, icon: UIImage? = nil, iconSize: CGSize? = nil, iconPlacement: IconPlacement = .default, title: String, subtitle: String? = nil, style: ItemListCheckboxItemStyle, color: ItemListCheckboxItemColor = .accent, textColor: TextColor = .primary, checked: Bool, enabled: Bool = true, zeroSeparatorInsets: Bool, maximumNumberOfLines: Int = 1, sectionId: ItemListSectionId, action: @escaping () -> Void, deleteAction: (() -> Void)? = nil, tag: Any? = nil) {
         self.presentationData = presentationData
         self.systemStyle = systemStyle
         self.icon = icon
@@ -58,6 +59,7 @@ public class ItemListCheckboxItem: ListViewItem, ItemListItem {
         self.checked = checked
         self.enabled = enabled
         self.zeroSeparatorInsets = zeroSeparatorInsets
+        self.maximumNumberOfLines = maximumNumberOfLines
         self.sectionId = sectionId
         self.action = action
         self.deleteAction = deleteAction
@@ -219,7 +221,8 @@ public class ItemListCheckboxItemNode: ItemListRevealOptionsItemNode {
                 }
             }
             
-            let trailingInset: CGFloat = max(28.0, 28.0 + params.rightInset - params.leftInset)
+            let checkInset: CGFloat = item.maximumNumberOfLines != 1 && item.style == .right ? 44.0 : 28.0
+            let trailingInset = checkInset + max(0.0, params.rightInset - params.leftInset)
             
             let titleFont = Font.regular(item.presentationData.fontSize.itemListBaseFontSize)
             let subtitleFont = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0))
@@ -236,7 +239,7 @@ public class ItemListCheckboxItemNode: ItemListRevealOptionsItemNode {
                 titleColor = item.presentationData.theme.list.itemDisabledTextColor
             }
             
-            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - trailingInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: titleColor), backgroundColor: nil, maximumNumberOfLines: item.maximumNumberOfLines, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - trailingInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             let (subtitleLayout, subtitleApply) = makeSubtitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.subtitle ?? "", font: subtitleFont, textColor: subtitleColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - trailingInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             

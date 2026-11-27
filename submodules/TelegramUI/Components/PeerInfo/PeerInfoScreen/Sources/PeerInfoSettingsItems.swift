@@ -10,6 +10,7 @@ import SwiftSignalKit
 import PhotoResources
 import ItemListPeerItem
 import DeviceAccess
+import ExteraSettingsUI
 import TelegramStringFormatting
 import PeerNameColorItem
 import WalletContext
@@ -253,7 +254,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         interaction.openSettings(.chatFolders)
     }))
 
-    items[.exteraGram]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "exteraGram", action: {
+    items[.exteraGram]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "exteraGram", icon: exteraSettingsIcon, action: {
         interaction.openSettings(.exteraGram)
     }))
     

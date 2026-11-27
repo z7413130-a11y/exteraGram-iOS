@@ -10,9 +10,34 @@ import TelegramPresentationData
 import TranslateUI
 import UIKit
 
+private func exteraIcon(size: CGFloat, cornerRadius: CGFloat) -> UIImage? {
+    guard let image = UIImage(bundleImageName: "ExteraGramPreview") else { return nil }
+    let bounds = CGRect(x: 0, y: 0, width: size, height: size)
+    return UIGraphicsImageRenderer(size: bounds.size).image { _ in
+        UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius).addClip()
+        image.draw(in: bounds)
+    }
+}
+
+public let exteraSettingsIcon = exteraIcon(size: 30, cornerRadius: 8)
+private let exteraMenuIcon = exteraIcon(size: 36, cornerRadius: 10)
+
+private extension ExteraSettingsCategory {
+    var icon: UIImage? {
+        switch self {
+        case .general: return PresentationResourcesSettings.dataAndStorage
+        case .appearance: return PresentationResourcesSettings.appearance
+        case .chats: return PresentationResourcesSettings.privateChats
+        case .plugins: return PresentationResourcesSettings.effects
+        case .other: return PresentationResourcesSettings.files
+        }
+    }
+}
+
 private struct SettingsRow: ItemListNodeEntry {
     enum Kind: Equatable {
-        case header
+        case brand(String)
+        case category(ExteraSettingsCategory)
         case toggle(Bool)
         case disclosure(String)
         case language(Bool)
@@ -32,24 +57,39 @@ private struct SettingsRow: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let action = arguments as! (Int, Bool?) -> Void
         switch self.kind {
-        case .header:
-            return ItemListSectionHeaderItem(presentationData: presentationData, text: self.title, sectionId: self.section)
+        case let .brand(version):
+            return ItemListDisclosureItem(
+                presentationData: presentationData, systemStyle: .glass, icon: exteraMenuIcon,
+                title: self.title, titleFont: .bold, label: version, labelStyle: .multilineDetailText,
+                sectionId: self.section, style: .blocks, disclosureStyle: .none, action: nil
+            )
+        case let .category(category):
+            return ItemListDisclosureItem(
+                presentationData: presentationData, systemStyle: .glass, icon: category.icon,
+                title: self.title, label: "", sectionId: self.section, style: .blocks,
+                action: { action(self.stableId, nil) }
+            )
         case let .toggle(value):
             return ItemListSwitchItem(
                 presentationData: presentationData, systemStyle: .glass, title: self.title,
-                value: value, sectionId: self.section, style: .blocks,
+                value: value, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks,
                 updated: { action(self.stableId, $0) }
             )
         case let .disclosure(label):
             return ItemListDisclosureItem(
                 presentationData: presentationData, systemStyle: .glass, title: self.title,
-                label: label, sectionId: self.section, style: .blocks,
+                attributedTitle: NSAttributedString(string: self.title, attributes: [
+                    .font: Font.regular(presentationData.fontSize.itemListBaseFontSize),
+                    .foregroundColor: presentationData.theme.list.itemPrimaryTextColor,
+                ]),
+                label: label, labelStyle: label.isEmpty ? .text : .multilineDetailText,
+                sectionId: self.section, style: .blocks,
                 action: { action(self.stableId, nil) }
             )
         case let .language(selected):
             return ItemListCheckboxItem(
                 presentationData: presentationData, systemStyle: .glass, title: self.title,
-                style: .right, checked: selected, zeroSeparatorInsets: false,
+                style: .right, checked: selected, zeroSeparatorInsets: false, maximumNumberOfLines: 0,
                 sectionId: self.section, action: { action(self.stableId, nil) }
             )
         case .action:
@@ -65,9 +105,9 @@ private struct SettingsRow: ItemListNodeEntry {
 }
 
 private enum RowID: Int {
-    case generalHeader, translation, targetLanguage, reset, appearanceHeader, appearance
+    case translation, targetLanguage, reset
     case stories, counters, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, centerTitle, dividers, privateReactions, channelReactions, groupReactions
-    case chatsHeader, details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, pluginsHeader, plugins, otherHeader, about
+    case details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, plugins, about
 }
 
 private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String, ExteraPreference<Bool>)? {
@@ -103,7 +143,33 @@ private func languageName(_ code: String, locale: Locale, strings: ExteraStrings
 }
 
 /// The settings entry point used by Telegram's Settings tab and iPad sidebar.
-public func exteraSettingsController(context: AccountContext, makeAppearanceController: @escaping () -> ViewController) -> ViewController {
+public func exteraSettingsController(context: AccountContext) -> ViewController {
+    weak var settingsController: ItemListController?
+    let action: (Int, Bool?) -> Void = { id, _ in
+        guard let rawValue = Int32(exactly: id), let category = ExteraSettingsCategory(rawValue: rawValue) else { return }
+        settingsController?.push(exteraCategoryController(context: context, category: category))
+    }
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    let state = context.sharedContext.presentationData
+    |> map { presentation -> (ItemListControllerState, (ItemListNodeState, (Int, Bool?) -> Void)) in
+        let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
+        let data = ItemListPresentationData(presentation)
+        let rows = [
+            SettingsRow(stableId: -1, section: 0, title: "exteraGram",
+                kind: .brand(version.isEmpty ? "" : strings.text("Version \(version)", "Версия \(version)"))),
+        ] + ExteraSettingsCategory.allCases.map { category in
+            SettingsRow(stableId: Int(category.rawValue), section: 1, title: strings.category(category), kind: .category(category))
+        }
+        return (ItemListControllerState(presentationData: data, title: .text("exteraGram"),
+            leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
+            (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
+    }
+    let controller = ItemListController(context: context, state: state)
+    settingsController = controller
+    return controller
+}
+
+private func exteraCategoryController(context: AccountContext, category: ExteraSettingsCategory) -> ViewController {
     let store = ExteraSettingsStore.shared
     weak var settingsController: ItemListController?
     let action: (Int, Bool?) -> Void = { id, value in
@@ -149,8 +215,6 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
             if let value { store.set(value, for: ExteraPreferences.translateDrafts) }
         case .targetLanguage:
             settingsController?.push(exteraLanguageController(context: context))
-        case .appearance:
-            settingsController?.push(makeAppearanceController())
         case .details:
             if let value { store.set(value, for: ExteraPreferences.showDetailsButton) }
         case .hideShare:
@@ -181,53 +245,60 @@ public func exteraSettingsController(context: AccountContext, makeAppearanceCont
         func row(_ id: RowID, _ section: ExteraSettingsCategory, _ title: String, _ kind: SettingsRow.Kind) -> SettingsRow {
             return SettingsRow(stableId: id.rawValue, section: section.rawValue, title: title, kind: kind)
         }
-        let appearanceRows: [RowID] = [.stories, .counters, .callsTab, .premium, .animatedEmoji, .avatarCorners, .stickerSize, .tail, .edited, .search, .centerTitle, .dividers, .privateReactions, .channelReactions, .groupReactions]
-        let appearanceItems = appearanceRows.compactMap { id -> SettingsRow? in
-            if let (title, preference) = appearanceToggle(id, strings) {
-                return row(id, .appearance, title, .toggle(store.value(for: preference)))
+        let rows: [SettingsRow]
+        switch category {
+        case .general:
+            rows = [
+                row(.translation, .general, strings.text("Translate before sending", "Перевод перед отправкой"), .toggle(store.value(for: ExteraPreferences.translateDrafts))),
+                row(.targetLanguage, .general, strings.text("Translation language", "Язык перевода"), .disclosure(languageName(store.value(for: ExteraPreferences.targetLang), locale: locale, strings: strings))),
+                row(.reset, .general, strings.text("Reset exteraGram settings", "Сбросить настройки exteraGram"), .action),
+            ]
+        case .appearance:
+            let appearanceRows: [RowID] = [.stories, .counters, .callsTab, .premium, .animatedEmoji, .avatarCorners, .stickerSize, .tail, .edited, .search, .centerTitle, .dividers, .privateReactions, .channelReactions, .groupReactions]
+            rows = appearanceRows.compactMap { id -> SettingsRow? in
+                if let (title, preference) = appearanceToggle(id, strings) {
+                    return row(id, .appearance, title, .toggle(store.value(for: preference)))
+                }
+                switch id {
+                case .counters:
+                    return row(id, .appearance, strings.text("Hide unread counters", "Скрыть счётчики непрочитанных"), .toggle(ExteraAppearance.hidesUnreadCounters))
+                case .dividers:
+                    return row(id, .appearance, strings.text("Hide chat list dividers", "Скрыть разделители списка чатов"), .toggle(ExteraAppearance.hidesDividers))
+                case .avatarCorners:
+                    return row(id, .appearance, strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"), .disclosure("\(Int(ExteraAppearance.avatarCornerFraction * 200))%"))
+                case .stickerSize:
+                    return row(id, .appearance, strings.text("Sticker size", "Размер стикеров"), .disclosure("\(Int((ExteraAppearance.stickerScale * 100).rounded()))%"))
+                default: return nil
+                }
             }
-            switch id {
-            case .counters:
-                return row(id, .appearance, strings.text("Hide unread counters", "Скрыть счётчики непрочитанных"), .toggle(ExteraAppearance.hidesUnreadCounters))
-            case .dividers:
-                return row(id, .appearance, strings.text("Hide chat list dividers", "Скрыть разделители списка чатов"), .toggle(ExteraAppearance.hidesDividers))
-            case .avatarCorners:
-                return row(id, .appearance, strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"), .disclosure("\(Int(ExteraAppearance.avatarCornerFraction * 200))%"))
-            case .stickerSize:
-                return row(id, .appearance, strings.text("Sticker size", "Размер стикеров"), .disclosure("\(Int((ExteraAppearance.stickerScale * 100).rounded()))%"))
-            default: return nil
-            }
+        case .chats:
+            rows = [
+                row(.details, .chats, strings.messageDetails, .toggle(store.value(for: ExteraPreferences.showDetailsButton))),
+                row(.hideShare, .chats, strings.text("Hide share button", "Скрыть кнопку «Поделиться»"), .toggle(store.value(for: ExteraPreferences.hideShareButton))),
+                row(.confirmSticker, .chats, strings.text("Confirm sticker sends", "Подтверждать отправку стикеров"), .toggle(store.value(for: ExteraPreferences.confirmStickerSend))),
+                row(.confirmGif, .chats, strings.text("Confirm GIF sends", "Подтверждать отправку GIF"), .toggle(store.value(for: ExteraPreferences.confirmGifSend))),
+                row(.confirmCall, .chats, strings.text("Confirm calls", "Подтверждать звонки"), .toggle(store.value(for: ExteraPreferences.confirmCall))),
+                row(.hideVideoRecording, .chats, strings.text("Hide video message recording", "Скрыть запись видеосообщений"), .toggle(store.value(for: ExteraPreferences.hideVideoRecording))),
+                row(.showUserId, .chats, strings.text("Show copyable user IDs", "Показывать ID пользователя для копирования"), .toggle(store.value(for: ExteraPreferences.showIdAndDc) != 0)),
+                row(.doubleTapIncoming, .chats, gestureRowTitle(.doubleTapIncoming, strings),
+                    .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapAction), outgoing: false).title(strings))),
+                row(.doubleTapOutgoing, .chats, gestureRowTitle(.doubleTapOutgoing, strings),
+                    .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapActionOutOwner), outgoing: true).title(strings))),
+                row(.swipe, .chats, gestureRowTitle(.swipe, strings),
+                    .disclosure(exteraSwipeValue(store, strings))),
+            ]
+        case .plugins:
+            rows = [
+                row(.plugins, .plugins, strings.text("Plugin support is in development.", "Поддержка плагинов в разработке."), .note),
+            ]
+        case .other:
+            rows = [
+                row(.about, .other, strings.text("About", "О приложении"), .disclosure("")),
+            ]
         }
-        let rows = [
-            row(.generalHeader, .general, strings.category(.general), .header),
-            row(.translation, .general, strings.text("Translate before sending", "Перевод перед отправкой"), .toggle(store.value(for: ExteraPreferences.translateDrafts))),
-            row(.targetLanguage, .general, strings.text("Translation language", "Язык перевода"), .disclosure(languageName(store.value(for: ExteraPreferences.targetLang), locale: locale, strings: strings))),
-            row(.reset, .general, strings.text("Reset exteraGram settings", "Сбросить настройки exteraGram"), .action),
-            row(.appearanceHeader, .appearance, strings.category(.appearance), .header),
-            row(.appearance, .appearance, presentationData.strings.Settings_Appearance, .disclosure("")),
-        ] + appearanceItems + [
-            row(.chatsHeader, .chats, strings.category(.chats), .header),
-            row(.details, .chats, strings.messageDetails, .toggle(store.value(for: ExteraPreferences.showDetailsButton))),
-            row(.hideShare, .chats, strings.text("Hide share button", "Скрыть кнопку «Поделиться»"), .toggle(store.value(for: ExteraPreferences.hideShareButton))),
-            row(.confirmSticker, .chats, strings.text("Confirm sticker sends", "Подтверждать отправку стикеров"), .toggle(store.value(for: ExteraPreferences.confirmStickerSend))),
-            row(.confirmGif, .chats, strings.text("Confirm GIF sends", "Подтверждать отправку GIF"), .toggle(store.value(for: ExteraPreferences.confirmGifSend))),
-            row(.confirmCall, .chats, strings.text("Confirm calls", "Подтверждать звонки"), .toggle(store.value(for: ExteraPreferences.confirmCall))),
-            row(.hideVideoRecording, .chats, strings.text("Hide video message recording", "Скрыть запись видеосообщений"), .toggle(store.value(for: ExteraPreferences.hideVideoRecording))),
-            row(.showUserId, .chats, strings.text("Show copyable user IDs", "Показывать ID пользователя для копирования"), .toggle(store.value(for: ExteraPreferences.showIdAndDc) != 0)),
-            row(.doubleTapIncoming, .chats, gestureRowTitle(.doubleTapIncoming, strings),
-                .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapAction), outgoing: false).title(strings))),
-            row(.doubleTapOutgoing, .chats, gestureRowTitle(.doubleTapOutgoing, strings),
-                .disclosure(ExteraMessageGestureAction.doubleTap(setting: store.value(for: ExteraPreferences.doubleTapActionOutOwner), outgoing: true).title(strings))),
-            row(.swipe, .chats, gestureRowTitle(.swipe, strings),
-                .disclosure(exteraSwipeValue(store, strings))),
-            row(.pluginsHeader, .plugins, strings.category(.plugins), .header),
-            row(.plugins, .plugins, strings.text("Android plugins are unavailable in the iOS port.", "Плагины Android недоступны в iOS-порте."), .note),
-            row(.otherHeader, .other, strings.category(.other), .header),
-            row(.about, .other, strings.text("About", "О приложении"), .disclosure("")),
-        ]
         let data = ItemListPresentationData(presentationData)
         return (
-            ItemListControllerState(presentationData: data, title: .text("exteraGram"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            ItemListControllerState(presentationData: data, title: .text(strings.category(category)), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action)
         )
     }
@@ -251,7 +322,7 @@ private struct AboutRow: ItemListNodeEntry {
                 title: self.title, label: self.value, sectionId: self.section, style: .blocks, action: openRepository)
         }
         return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass,
-            icon: self.stableId == 0 ? generateScaledImage(image: UIImage(bundleImageName: "ExteraGramPreview"), size: CGSize(width: 30, height: 30)) : nil,
+            icon: self.stableId == 0 ? exteraSettingsIcon : nil,
             title: self.title, label: self.value, sectionId: self.section, style: .blocks, disclosureStyle: .none, action: nil)
     }
 }

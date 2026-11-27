@@ -100,10 +100,7 @@ extension PeerInfoScreenNode {
             let controller = self.context.sharedContext.makeFilterSettingsController(context: self.context, modal: false, scrollToTags: false, dismissed: nil)
             push(controller)
         case .exteraGram:
-            let context = self.context
-            push(exteraSettingsController(context: context, makeAppearanceController: {
-                return themeSettingsController(context: context)
-            }))
+            push(exteraSettingsController(context: self.context))
         case .notificationsAndSounds:
             if let settings = self.data?.globalSettings {
                 push(notificationsAndSoundsController(context: self.context, exceptionsList: settings.notificationExceptions))
