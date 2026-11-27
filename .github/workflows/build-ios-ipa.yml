@@ -2,6 +2,11 @@ name: exteraGram iOS Port 0.1.0 - Device archive for later signing
 
 on:
   workflow_dispatch:
+    inputs:
+      swift_preflight_only:
+        description: 'Check the ARM64 TelegramUI framework without building an IPA or loading API credentials'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -152,26 +157,39 @@ jobs:
           if config.get('enable_siri') is not False:
               sys.exit('The deferred-signing build must leave Siri authorization disabled.')
           mode = sys.argv[1]
-          if mode not in ('analysis', 'warm', 'build'):
-              sys.exit('Expected analysis, warm or build mode.')
+          if mode not in ('analysis', 'warm', 'swift', 'build'):
+              sys.exit('Expected analysis, warm, swift or build mode.')
           masks = set()
           if mode == 'build':
               for value in (config['api_id'], config['api_hash']):
                   masks.update((value, value.upper(), value.lower(), base64.b64encode(value.encode()).decode()))
-          elif config['api_id'] != '1' or config['api_hash'] != '0' * 32:
+          elif (config['api_id'] != '1' or config['api_hash'] != '0' * 32
+                or any(os.environ.get(key) for key in ('TELEGRAM_API_ID', 'TELEGRAM_API_HASH'))):
               sys.exit('Public stages require the fixed placeholder credentials.')
           cmd = ['python3', '-u', 'build-system/Make/Make.py', '--bazel', os.environ['BAZEL_BIN']]
           if mode == 'warm':
               cmd += ['--cacheDir', str(root / 'public-webrtc-action-cache')]
+          elif mode == 'swift':
+              cmd += ['--cacheDir', str(root / 'public-swift-action-cache')]
           cmd += ['build', '--configurationPath', str(path), '--xcodeManagedCodesigning',
                   '--buildNumber', os.environ['PORT_BUILD_NUMBER'], '--configuration', 'debug_arm64']
           if mode == 'warm':
               cmd += ['--target', '//Telegram:webrtc_build_test']
+          elif mode == 'swift':
+              cmd += ['--target', '//Telegram:TelegramUIFramework']
+          if mode in ('swift', 'build'):
+              cmd += ['--continueOnError']
           rc = Path.home() / '.bazelrc'
           previous_rc = rc.read_bytes()
           try:
               if mode == 'analysis':
                   rc.write_bytes(previous_rc + b'\nbuild --nobuild\nbuild --keep_going\n')
+              elif mode == 'swift':
+                  # Materialize cache hits so the private build can reuse them in the same output base.
+                  rc.write_bytes(previous_rc + b'\nbuild --remote_download_outputs=all\n'
+                                 b'build --output_groups=-dossier,-dsyms\n'
+                                 b'build --experimental_disk_cache_gc_max_size=2G\n'
+                                 b'build --experimental_disk_cache_gc_idle_delay=1s\n')
               proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
               for line in proc.stdout:
                   if re.search(r'(?i)\b(?:telegram_|app_config_)?api_?(?:id|hash)\b', line):
@@ -183,7 +201,7 @@ jobs:
                   print(line, end='', flush=True)
               status = proc.wait()
           finally:
-              if mode == 'analysis':
+              if mode in ('analysis', 'swift'):
                   rc.write_bytes(previous_rc)
           sys.exit(status)
           PY
@@ -262,7 +280,78 @@ jobs:
           path: ${{ runner.temp }}/public-webrtc-action-cache
           key: ${{ steps.webrtc-cache-key.outputs.key }}
 
-      - name: Remove the temporary CI cache and configure API credentials
+      - name: Release the temporary WebRTC cache directory
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/public-webrtc-action-cache"
+
+      - name: Compute the public Swift action cache key
+        id: swift-cache-key
+        shell: bash
+        env:
+          SUBMODULE_FINGERPRINT: ${{ steps.submodules.outputs.fingerprint }}
+          BUILD_SETTINGS_HASH: ${{ hashFiles('versions.json', 'MODULE.bazel', 'MODULE.bazel.lock', '.bazelrc', 'WORKSPACE', 'Telegram/BUILD', '.github/workflows/build-ios-ipa.yml', 'build-system/Make/**', 'build-system/bazel-patches/**') }}
+        run: |
+          set -euo pipefail
+          xcode_build=$(xcodebuild -version | awk '/Build version/ {print $3}')
+          sdk_build=$(xcrun --sdk iphoneos --show-sdk-build-version)
+          test -n "$xcode_build"
+          test -n "$sdk_build"
+          prefix="swift-ios-arm64-bazel-9.2.0-v1-${xcode_build}-${sdk_build}-${SUBMODULE_FINGERPRINT}-${BUILD_SETTINGS_HASH}-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+
+      - name: Restore public Swift compilation outputs
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/public-swift-action-cache
+          key: ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-
+            ${{ steps.swift-cache-key.outputs.prefix }}
+
+      - name: Check Swift modules for ARM64 without packaging an IPA
+        id: swift-preflight
+        shell: bash
+        run: python3 -u "$RUNNER_TEMP/device-build.py" swift
+
+      - name: Check the public Swift cache budget after compilation
+        id: swift-cache-budget
+        if: ${{ !cancelled() && (steps.swift-preflight.outcome == 'success' || steps.swift-preflight.outcome == 'failure') }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/public-swift-action-cache"
+          if [[ ! -d "$cache" ]]; then exit 0; fi
+          # Bazel may prune the cache in the background after the command returns.
+          for attempt in 1 2 3 4 5; do
+            size_kib=$(du -sk "$cache" | cut -f1)
+            if (( size_kib <= 2 * 1024 * 1024 )); then break; fi
+            sleep 2
+          done
+          # Preserve the output base and stop cache writes before the snapshot.
+          "$BAZEL_BIN" shutdown
+          size_kib=$(du -sk "$cache" | cut -f1)
+          echo "Public Swift action cache: ${size_kib} KiB"
+          if (( size_kib > 0 && size_kib <= 2 * 1024 * 1024 )); then
+            echo 'save=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save public Swift results even when typechecking failed
+        if: ${{ !cancelled() && steps.swift-cache-budget.outputs.save == 'true' }}
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/public-swift-action-cache
+          key: ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Remove the public Swift cache before any private steps
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/public-swift-action-cache"
+
+      - name: Configure API credentials for the final archive
+        if: ${{ !inputs.swift_preflight_only }}
         shell: bash
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
@@ -270,7 +359,8 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          rm -rf "$RUNNER_TEMP/public-webrtc-action-cache"
+          test ! -e "$RUNNER_TEMP/public-webrtc-action-cache"
+          test ! -e "$RUNNER_TEMP/public-swift-action-cache"
           python3 - <<'PY'
           import json, os, re, sys
           from pathlib import Path
@@ -285,10 +375,12 @@ jobs:
           PY
 
       - name: Compile complete ARM64 iPhone target for subsequent standard signing
+        if: ${{ !inputs.swift_preflight_only }}
         shell: bash
         run: python3 -u "$RUNNER_TEMP/device-build.py" build
 
       - name: Audit actual IPA structure, extensions, platform and minimum iOS
+        if: ${{ !inputs.swift_preflight_only }}
         shell: bash
         run: |
           set -euo pipefail
@@ -393,6 +485,7 @@ jobs:
           PY
 
       - name: Encrypt IPA for private testing (public repository)
+        if: ${{ !inputs.swift_preflight_only }}
         shell: bash
         run: |
           set -euo pipefail
@@ -437,6 +530,7 @@ jobs:
           echo 'Encrypted IPA ready; plaintext is not uploaded.'
 
       - name: Upload encrypted IPA and non-secret build report
+        if: ${{ !inputs.swift_preflight_only }}
         uses: actions/upload-artifact@v7
         with:
           name: exteraGram-iOS-Port-0.1.0-ARM64-private-test
@@ -450,6 +544,7 @@ jobs:
           retention-days: 3
 
       - name: Match dSYM UUIDs to the IPA and encrypt debug symbols
+        if: ${{ !inputs.swift_preflight_only }}
         shell: bash
         run: |
           set -euo pipefail
@@ -518,6 +613,7 @@ jobs:
           test -s "$output"
 
       - name: Upload encrypted dSYMs for crash symbolication
+        if: ${{ !inputs.swift_preflight_only }}
         uses: actions/upload-artifact@v7
         with:
           name: exteraGram-iOS-Port-0.1.0-ARM64-symbols-encrypted
