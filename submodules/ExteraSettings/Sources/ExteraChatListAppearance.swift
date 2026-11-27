@@ -43,3 +43,16 @@ public enum ExteraFolderCounters: Int, CaseIterable {
         }
     }
 }
+
+public enum ExteraHeaderBlur: Int, CaseIterable {
+    case standard, progressive, gradient, none
+
+    public func title(_ strings: ExteraStrings) -> String {
+        switch self {
+        case .standard: return strings.text("Standard", "Стандартное")
+        case .progressive: return strings.text("Progressive", "Прогрессивное")
+        case .gradient: return strings.text("Gradient tint", "Градиентное")
+        case .none: return strings.text("No blur", "Без размытия")
+        }
+    }
+}

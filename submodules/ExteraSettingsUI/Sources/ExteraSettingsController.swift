@@ -128,7 +128,7 @@ private enum RowID: Int {
     case details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, plugins, about
     case uniformAvatar, gooeyAvatar, forceSnow, headerStatus, headerTitle, folderIcons, folderCounters, stickerShape, stickerTime
     case hiddenAllChats, composeInMenu, compactCompose
-    case hideNews, tabOrder
+    case hideNews, tabOrder, headerBlur
 }
 
 private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String, ExteraPreference<Bool>)? {
@@ -171,6 +171,7 @@ private func appearanceChoiceTitle(_ row: RowID, _ strings: ExteraStrings) -> St
     case .folderCounters: return strings.text("Unread folder counters", "Счётчики непрочитанного в папках")
     case .stickerShape: return strings.text("Sticker shape", "Форма стикеров")
     case .stickerTime: return strings.text("Sticker timestamp", "Время на стикерах")
+    case .headerBlur: return strings.text("Header blur", "Размытие верхней панели")
     default: return ""
     }
 }
@@ -239,7 +240,7 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
             settingsController?.push(exteraSliderController(context: context, title: strings.text("Sticker size", "Размер стикеров"),
                 preference: ExteraPreferences.stickerSize, limits: 4...20,
                 rangeLabels: (strings.text("Smaller", "Меньше"), strings.text("Larger", "Больше")), preview: .messages))
-        case .headerTitle, .folderIcons, .folderCounters, .stickerShape, .stickerTime:
+        case .headerTitle, .folderIcons, .folderCounters, .stickerShape, .stickerTime, .headerBlur:
             let options: (preference: ExteraPreference<Int>, titles: [String])
             switch row {
             case .headerTitle:
@@ -250,6 +251,8 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                 options = (ExteraPreferences.stickerShape, ExteraStickerShape.allCases.map { $0.title(strings) })
             case .stickerTime:
                 options = (ExteraPreferences.stickerTimeMode, ExteraStickerTime.allCases.map { $0.title(strings) })
+            case .headerBlur:
+                options = (ExteraPreferences.headerBlurStyle, ExteraHeaderBlur.allCases.map { $0.title(strings) })
             default:
                 options = (ExteraPreferences.tabCounterMode, ExteraFolderCounters.allCases.map { $0.title(strings) })
             }
@@ -326,7 +329,7 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                 switch appearancePage {
                 case .avatars: appearanceRows = [.avatarCorners, .uniformAvatar, .gooeyAvatar]
                 case .chatList: appearanceRows = [.stories, .search, .dividers, .forceSnow]
-                case .header: appearanceRows = [.centerTitle, .headerStatus, .headerTitle, .composeInMenu, .compactCompose]
+                case .header: appearanceRows = [.centerTitle, .headerStatus, .headerTitle, .composeInMenu, .compactCompose, .headerBlur]
                 case .folders: appearanceRows = [.folderIcons, .folderCounters, .hiddenAllChats]
                 case .navigation: appearanceRows = [.callsTab, .hideNews, .tabOrder]
                 case .messages: appearanceRows = [.premium, .animatedEmoji, .stickerSize, .tail, .edited, .privateReactions, .channelReactions, .groupReactions, .stickerShape, .stickerTime]
@@ -363,6 +366,9 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                         return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
                     case .tabOrder:
                         return row(id, .appearance, strings.text("Tab order", "Порядок вкладок"), .disclosure(""))
+                    case .headerBlur:
+                        let value = ExteraHeaderBlur(rawValue: store.value(for: ExteraPreferences.headerBlurStyle)) ?? .standard
+                        return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
                     default: return nil
                     }
                 }

@@ -69,7 +69,7 @@ public enum ExteraPreferences {
     public static let transitionAnimation = ExteraPreference<Int>("transitionAnimation", .appearance, 2)
     public static let glassOutlineStyle = ExteraPreference<Int>("glassOutlineStyle", .appearance, 0)
     public static let glassMessageMenu = ExteraPreference<Bool>("glassMessageMenu", .appearance, true)
-    public static let headerBlurStyle = ExteraPreference<Int>("headerBlurStyle", .appearance, 1)
+    public static let headerBlurStyle = ExteraPreference<Int>("headerBlurStyle", .appearance, ExteraHeaderBlur.standard.rawValue)
     public static let eventType = ExteraPreference<Int>("eventType", .appearance, 0)
     public static let navigationDrawer = ExteraPreference<Bool>("navigationDrawer", .appearance, false)
     public static let immersiveDrawerAnimation = ExteraPreference<Bool>("immersiveDrawerAnimation", .appearance, false)

@@ -54,7 +54,8 @@ enum ExteraAppearancePage: Int, CaseIterable {
             return .header(title: title.title(strings), centered: store.value(for: ExteraPreferences.centerTitle),
                 status: !store.value(for: ExteraPreferences.hideActionBarStatus),
                 composeInMenu: store.value(for: ExteraPreferences.hideFloatingButton),
-                compactCompose: store.value(for: ExteraPreferences.squareFab))
+                compactCompose: store.value(for: ExteraPreferences.squareFab),
+                blur: ExteraHeaderBlur(rawValue: store.value(for: ExteraPreferences.headerBlurStyle)) ?? .standard)
         case .folders:
             return .folders(ExteraFolderIcons(rawValue: store.value(for: ExteraPreferences.tabIcons)) ?? .text,
                 ExteraFolderCounters(rawValue: store.value(for: ExteraPreferences.tabCounterMode)) ?? .all)

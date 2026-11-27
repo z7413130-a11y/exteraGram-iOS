@@ -8,7 +8,7 @@ import UIKit
 enum ExteraLivePreview: Equatable {
     case avatars(CGFloat, Bool, Bool)
     case chatList(stories: Bool, search: Bool, dividers: Bool, counters: Bool, snow: Bool)
-    case header(title: String, centered: Bool, status: Bool, composeInMenu: Bool, compactCompose: Bool)
+    case header(title: String, centered: Bool, status: Bool, composeInMenu: Bool, compactCompose: Bool, blur: ExteraHeaderBlur)
     case folders(ExteraFolderIcons, ExteraFolderCounters)
     case navigation([ExteraTab])
     case messages(scale: CGFloat, shape: ExteraStickerShape, time: ExteraStickerTime, tails: Bool, editedIcon: Bool, reactions: Bool)
@@ -145,7 +145,7 @@ private final class ExteraAppearancePreviewNode: ListViewItemNode {
             } else {
                 newContent = stack
             }
-        case let .header(title, centered, status, composeInMenu, compactCompose):
+        case let .header(title, centered, status, composeInMenu, compactCompose, blur):
             let titleLabel = label(title + (status ? "  ✦" : ""), size: 19)
             titleLabel.textAlignment = centered ? .center : .left
             let compose = UIImageView(image: UIImage(systemName: composeInMenu ? "ellipsis" : "square.and.pencil"))
@@ -158,7 +158,27 @@ private final class ExteraAppearancePreviewNode: ListViewItemNode {
             let stack = UIStackView(arrangedSubviews: [titleLabel, compose])
             stack.alignment = .center
             stack.spacing = 8
-            newContent = stack
+            let panel = UIView()
+            let region = self.host.bounds.insetBy(dx: 10, dy: 10)
+            let bounds = CGRect(origin: .zero, size: region.size)
+            panel.frame = bounds
+            panel.clipsToBounds = true
+            panel.layer.cornerRadius = 12
+            let gradient = CAGradientLayer()
+            gradient.colors = [list.itemAccentColor.withAlphaComponent(blur == .none ? 0 : 0.35).cgColor,
+                list.itemBlocksBackgroundColor.cgColor]
+            gradient.frame = bounds
+            panel.layer.addSublayer(gradient)
+            if (blur == .progressive || blur == .standard), !UIAccessibility.isReduceTransparencyEnabled {
+                let style: UIBlurEffect.Style = item.presentationData.theme.overallDarkAppearance ? .systemMaterialDark : .systemMaterialLight
+                let blurView = UIVisualEffectView(effect: UIBlurEffect(style: style))
+                blurView.frame = bounds
+                blurView.alpha = blur == .progressive ? 0.55 : 0.8
+                panel.addSubview(blurView)
+            }
+            stack.frame = bounds.insetBy(dx: 8, dy: 0)
+            panel.addSubview(stack)
+            newContent = panel
         case let .folders(mode, counters):
             let stack = UIStackView()
             stack.distribution = .fillEqually

@@ -1786,6 +1786,17 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
             sideColumn = sideColumnRegion(layout: layout, minY: (layout.statusBarHeight ?? 0.0) + 8.0, reservedBelow: reservedBelow)
         }
         
+        var edgeAppearance: ChatListNavigationBar.EdgeAppearance = .standard
+        if case .chatList(.root) = self.location, self.isSearchDisplayControllerActive == nil {
+            let blur = ExteraHeaderBlur(rawValue: ExteraSettingsStore.shared.value(for: ExteraPreferences.headerBlurStyle)) ?? .standard
+            switch blur {
+            case .standard: break
+            case .progressive:
+                edgeAppearance = UIAccessibility.isReduceTransparencyEnabled || ProcessInfo.processInfo.isLowPowerModeEnabled ? .gradient : .progressive
+            case .gradient: edgeAppearance = .gradient
+            case .none: edgeAppearance = .solid
+            }
+        }
         let navigationBarSize = self.navigationBarView.update(
             transition: transition,
             component: AnyComponent(ChatListNavigationBar(
@@ -1814,6 +1825,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 // The chat side list's header fades into the list's own background, whatever row is first (a pinned
                 // row's tint would colour the header).
                 edgeEffectColor: (self.controller?.isSideList ?? false) ? self.presentationData.theme.chatList.backgroundColor : nil,
+                edgeAppearance: edgeAppearance,
                 activateSearch: { [weak self] searchContentNode in
                     guard let self, let controller = self.controller else {
                         return

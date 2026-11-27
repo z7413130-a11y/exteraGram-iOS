@@ -54,6 +54,10 @@ public final class ChatListNavigationBar: Component {
             self.isExternal = isExternal
         }
     }
+
+    public enum EdgeAppearance {
+        case standard, progressive, gradient, solid
+    }
     
     public let context: AccountContext
     public let theme: PresentationTheme
@@ -79,6 +83,7 @@ public final class ChatListNavigationBar: Component {
     public let accessoryPanelContainerHeight: CGFloat
     public let hasEdgeEffect: Bool
     public let edgeEffectColor: UIColor?
+    public let edgeAppearance: EdgeAppearance
     public let hasOwnGlassContainer: Bool
     public let activateSearch: (NavigationBarSearchContentNode) -> Void
     public let openStatusSetup: (UIView) -> Void
@@ -112,6 +117,7 @@ public final class ChatListNavigationBar: Component {
         accessoryPanelContainerHeight: CGFloat,
         hasEdgeEffect: Bool = true,
         edgeEffectColor: UIColor? = nil,
+        edgeAppearance: EdgeAppearance = .standard,
         hasOwnGlassContainer: Bool = true,
         activateSearch: @escaping (NavigationBarSearchContentNode) -> Void,
         openStatusSetup: @escaping (UIView) -> Void,
@@ -142,6 +148,7 @@ public final class ChatListNavigationBar: Component {
         self.accessoryPanelContainerHeight = accessoryPanelContainerHeight
         self.hasEdgeEffect = hasEdgeEffect
         self.edgeEffectColor = edgeEffectColor
+        self.edgeAppearance = edgeAppearance
         self.hasOwnGlassContainer = hasOwnGlassContainer
         self.activateSearch = activateSearch
         self.openStatusSetup = openStatusSetup
@@ -214,7 +221,7 @@ public final class ChatListNavigationBar: Component {
         if lhs.hasEdgeEffect != rhs.hasEdgeEffect {
             return false
         }
-        if lhs.edgeEffectColor != rhs.edgeEffectColor {
+        if lhs.edgeEffectColor != rhs.edgeEffectColor || lhs.edgeAppearance != rhs.edgeAppearance {
             return false
         }
         if lhs.hasOwnGlassContainer != rhs.hasOwnGlassContainer {
@@ -592,7 +599,12 @@ public final class ChatListNavigationBar: Component {
             edgeEffectHeight = max(0.0, edgeEffectHeight)
             let edgeEffectFrame = CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: currentLayout.size.width, height: edgeEffectHeight))
             transition.setFrame(view: self.edgeEffectView, frame: edgeEffectFrame)
-            self.edgeEffectView.update(content: nil, blur: true, alpha: ChatListNavigationBar.View.edgeEffectTintAlpha, rect: edgeEffectFrame, edge: .top, edgeSize: min(ChatListNavigationBar.View.edgeEffectEdgeLength, edgeEffectHeight), transition: transition)
+            let style = component.edgeAppearance
+            let blur = style == .standard || style == .progressive
+            let edgeLength = ChatListNavigationBar.View.edgeEffectEdgeLength * (style == .progressive ? 1.5 : 1)
+            self.edgeEffectView.update(content: nil, blur: blur, blurRadius: style == .progressive ? 2 : 1,
+                alpha: style == .solid ? 1 : ChatListNavigationBar.View.edgeEffectTintAlpha, rect: edgeEffectFrame,
+                edge: .top, edgeSize: min(style == .solid ? 1 : edgeLength, edgeEffectHeight), transition: transition)
             
             let headerTransition = transition
             
@@ -871,6 +883,7 @@ public final class ChatListNavigationBar: Component {
                     accessoryPanelContainerHeight: component.accessoryPanelContainerHeight,
                     hasEdgeEffect: component.hasEdgeEffect,
                     edgeEffectColor: component.edgeEffectColor,
+                    edgeAppearance: component.edgeAppearance,
                     hasOwnGlassContainer: component.hasOwnGlassContainer,
                     activateSearch: component.activateSearch,
                     openStatusSetup: component.openStatusSetup,
