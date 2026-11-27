@@ -188,7 +188,7 @@ jobs:
                   # Materialize cache hits so the private build can reuse them in the same output base.
                   rc.write_bytes(previous_rc + b'\nbuild --remote_download_outputs=all\n'
                                  b'build --output_groups=-dossier,-dsyms\n'
-                                 b'build --experimental_disk_cache_gc_max_size=2G\n'
+                                 b'build --experimental_disk_cache_gc_max_size=4G\n'
                                  b'build --experimental_disk_cache_gc_idle_delay=1s\n')
               proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
               for line in proc.stdout:
@@ -296,14 +296,16 @@ jobs:
           sdk_build=$(xcrun --sdk iphoneos --show-sdk-build-version)
           test -n "$xcode_build"
           test -n "$sdk_build"
-          prefix="swift-ios-arm64-bazel-9.2.0-v1-${xcode_build}-${sdk_build}-${SUBMODULE_FINGERPRINT}-${BUILD_SETTINGS_HASH}-"
+          prefix="swift-ios-arm64-bazel-9.2.0-v2-${xcode_build}-${sdk_build}-${SUBMODULE_FINGERPRINT}-${BUILD_SETTINGS_HASH}-"
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
 
       - name: Restore public Swift compilation outputs
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         continue-on-error: true
         with:
-          path: ${{ runner.temp }}/public-swift-action-cache
+          path: |
+            ${{ runner.temp }}/public-swift-action-cache/ac
+            ${{ runner.temp }}/public-swift-action-cache/cas
           key: ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-
@@ -314,7 +316,7 @@ jobs:
         shell: bash
         run: python3 -u "$RUNNER_TEMP/device-build.py" swift
 
-      - name: Check the public Swift cache budget after compilation
+      - name: Stop Bazel and bound the public Swift cache before saving
         id: swift-cache-budget
         if: ${{ !cancelled() && (steps.swift-preflight.outcome == 'success' || steps.swift-preflight.outcome == 'failure') }}
         continue-on-error: true
@@ -323,26 +325,18 @@ jobs:
           set -euo pipefail
           cache="$RUNNER_TEMP/public-swift-action-cache"
           if [[ ! -d "$cache" ]]; then exit 0; fi
-          # Bazel may prune the cache in the background after the command returns.
-          for attempt in 1 2 3 4 5; do
-            size_kib=$(du -sk "$cache" | cut -f1)
-            if (( size_kib <= 2 * 1024 * 1024 )); then break; fi
-            sleep 2
-          done
-          # Preserve the output base and stop cache writes before the snapshot.
+          # The disk cache collector can keep deleting files after the build returns.
           "$BAZEL_BIN" shutdown
-          size_kib=$(du -sk "$cache" | cut -f1)
-          echo "Public Swift action cache: ${size_kib} KiB"
-          if (( size_kib > 0 && size_kib <= 2 * 1024 * 1024 )); then
-            echo 'save=true' >> "$GITHUB_OUTPUT"
-          fi
+          python3 build-system/Make/BoundPublicActionCache.py "$cache" "$GITHUB_OUTPUT"
 
       - name: Save public Swift results even when typechecking failed
         if: ${{ !cancelled() && steps.swift-cache-budget.outputs.save == 'true' }}
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         continue-on-error: true
         with:
-          path: ${{ runner.temp }}/public-swift-action-cache
+          path: |
+            ${{ runner.temp }}/public-swift-action-cache/ac
+            ${{ runner.temp }}/public-swift-action-cache/cas
           key: ${{ steps.swift-cache-key.outputs.prefix }}${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Remove the public Swift cache before any private steps
