@@ -262,6 +262,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     private let actionDisposables = DisposableSet()
     
     private var plainTitle: String = ""
+    private var exteraAccountPeer: EnginePeer?
+    private(set) var exteraEffectsVisible = false
+    var exteraProxyEnabled: Bool { self.primaryContext?.exteraProxyEnabled ?? false }
     
     private var powerSavingMonitoringDisposable: Disposable?
     
@@ -2457,6 +2460,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     override public func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        self.exteraEffectsVisible = true
+        if !ExteraSettingsStore.shared.value(for: ExteraPreferences.pillStack).widgets.isEmpty || ExteraSettingsStore.shared.value(for: ExteraPreferences.forceSnow) {
+            self.requestLayout(transition: .immediate)
+        }
                 
         if self.powerSavingMonitoringDisposable == nil {
             self.powerSavingMonitoringDisposable = (self.context.sharedContext.automaticMediaDownloadSettings
@@ -2939,6 +2946,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     override public func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        self.exteraEffectsVisible = false
+        if !ExteraSettingsStore.shared.value(for: ExteraPreferences.pillStack).widgets.isEmpty || ExteraSettingsStore.shared.value(for: ExteraPreferences.forceSnow) {
+            self.requestLayout(transition: .immediate)
+        }
         
         self.chatListDisplayNode.mainContainerNode.updateEnableAdjacentFilterLoading(false)
         
@@ -2971,12 +2982,66 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             if self.previousItem != nil {
                 displayBackButton = true
             }
+            var displayedTitle = primaryContext.chatListTitle
+            var fallbackTitle = self.plainTitle
+            var rightButtons = primaryContext.rightButtons
+            if case .chatList(.root) = self.location, !self.chatListDisplayNode.mainContainerNode.currentItemNode.currentState.editing {
+                let store = ExteraSettingsStore.shared
+                if let index = rightButtons.firstIndex(where: { $0.id == "compose" }) {
+                    let compose = rightButtons[index]
+                    let corner: CGFloat? = store.value(for: ExteraPreferences.squareFab) ? 9 : nil
+                    if store.value(for: ExteraPreferences.hideFloatingButton) {
+                        let title = self.presentationData.strings.Compose_NewMessage
+                        rightButtons[index] = NavigationBarComponent.Button(id: "exteraComposeMenu", content: .more, glassCornerRadius: corner, action: { [weak self] source in
+                            let item = NavigationBarComponent.OverflowItem(id: "compose", title: title,
+                                iconName: "Chat List/ComposeIcon", action: compose.action)
+                            self?.openSideColumnOverflowMenu(sourceView: source, items: [item])
+                        }, accessibilityLabel: self.presentationData.strings.Common_More)
+                    } else if let corner {
+                        rightButtons[index] = NavigationBarComponent.Button(id: compose.id, content: compose.content,
+                            glassCornerRadius: corner, action: compose.action, contextAction: compose.contextAction)
+                    }
+                }
+                if store.value(for: ExteraPreferences.hideAllChats), self.chatListDisplayNode.mainContainerNode.currentItemFilter != .all {
+                    rightButtons.insert(NavigationBarComponent.Button(id: "exteraAllChats",
+                        content: .text(title: self.presentationData.strings.ChatList_Tabs_All, isBold: false),
+                        action: { [weak self] _ in self?.selectTab(id: .all) },
+                        accessibilityLabel: self.presentationData.strings.ChatList_Tabs_AllChats), at: 0)
+                }
+                if store.value(for: ExteraPreferences.hideActionBarStatus) {
+                    displayedTitle?.peerStatus = nil
+                }
+                if displayedTitle?.activity != true {
+                    let choice = ExteraChatListTitle(rawValue: store.value(for: ExteraPreferences.titleText)) ?? .chats
+                    let overrideTitle: String?
+                    switch choice {
+                    case .brand:
+                        overrideTitle = "exteraGram"
+                    case .username:
+                        overrideTitle = self.exteraAccountPeer?.addressName.flatMap { $0.isEmpty ? nil : "@\($0)" }
+                    case .account:
+                        overrideTitle = self.exteraAccountPeer?.displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder)
+                    case .folder:
+                        if case let .filter(_, text, _) = self.tabContainerData?.0.first(where: { $0.id == self.chatListDisplayNode.mainContainerNode.currentItemFilter }) {
+                            overrideTitle = text.text
+                        } else {
+                            overrideTitle = nil
+                        }
+                    case .chats:
+                        overrideTitle = nil
+                    }
+                    if let overrideTitle, !overrideTitle.isEmpty {
+                        displayedTitle?.text = overrideTitle
+                        fallbackTitle = overrideTitle
+                    }
+                }
+            }
             primaryContent = ChatListHeaderComponent.Content(
-                title: self.plainTitle,
+                title: fallbackTitle,
                 titleComponent: primaryContext.chatTitleComponent.flatMap { AnyComponent<Empty>($0) },
-                chatListTitle: primaryContext.chatListTitle,
+                chatListTitle: displayedTitle,
                 leftButton: primaryContext.leftButton,
-                rightButtons: primaryContext.rightButtons,
+                rightButtons: rightButtons,
                 backPressed: displayBackButton ? { [weak self] in
                     guard let self else {
                         return
@@ -4117,7 +4182,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private var initializedFilters = false
     private func reloadFilters(firstUpdate: (() -> Void)? = nil) {
-        let filterItems = chatListFilterItems(context: self.context)
+        let context = self.context
+        let filterItems = ExteraSettingsStore.shared.changes
+        |> map { _ in ExteraSettingsStore.shared.value(for: ExteraPreferences.tabCounterMode) == ExteraFolderCounters.unmuted.rawValue }
+        |> distinctUntilChanged
+        |> mapToSignal { chatListFilterItems(context: context, countOnlyUnmuted: $0) }
         var notifiedFirstUpdate = false
         self.filterDisposable.set((combineLatest(queue: .mainQueue(),
             filterItems,
@@ -4131,6 +4200,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             
             let isPremium = peerView.peers[peerView.peerId]?.isPremium
             strongSelf.isPremium = isPremium ?? false
+            let account = peerView.peers[peerView.peerId].map(EnginePeer.init)
+            if strongSelf.exteraAccountPeer != account {
+                strongSelf.exteraAccountPeer = account
+                strongSelf.requestLayout(transition: .immediate)
+            }
             
             let (_, items) = countAndFilterItems
             var filterItems: [ChatListFilterTabEntry] = []
@@ -6875,6 +6949,7 @@ private final class ChatListLocationContext {
     private(set) var title: String = ""
     private(set) var chatTitleComponent: ChatTitleComponent?
     private(set) var chatListTitle: NetworkStatusTitle?
+    private(set) var exteraProxyEnabled = false
     
     var leftButton: NavigationBarComponent.Button?
     var rightButton: NavigationBarComponent.Button?
@@ -7297,6 +7372,7 @@ private final class ChatListLocationContext {
         presentationData: PresentationData,
         storyPostingAvailable: Bool
     ) {
+        self.exteraProxyEnabled = proxy.1
         let defaultTitle: String
         switch location {
         case let .chatList(groupId):

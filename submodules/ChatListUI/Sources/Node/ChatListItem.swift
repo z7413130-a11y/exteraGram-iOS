@@ -2176,7 +2176,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             let avatarClipStyle: AvatarNodeClipStyle
             if peerIsMonoforum {
                 avatarClipStyle = .bubble
-            } else if isForumAvatar {
+            } else if isForumAvatar && !ExteraSettingsStore.shared.value(for: ExteraPreferences.singleCornerRadius) {
                 avatarClipStyle = .roundedRect
             } else {
                 let fraction = ExteraAppearance.avatarCornerFraction

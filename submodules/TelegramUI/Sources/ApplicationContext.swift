@@ -814,16 +814,14 @@ final class AuthorizedApplicationContext {
             }
             return value
         }
-        self.showCallsTabDisposable = (combineLatest(showCallsTabSignal, ExteraSettingsStore.shared.changes)
-        |> map { value, _ in value && !ExteraSettingsStore.shared.value(for: ExteraPreferences.hideCallsTab) }
+        let exteraTabAppearance = ExteraSettingsStore.shared.changes
+        |> map { _ in ExteraNavigationAppearance() }
         |> distinctUntilChanged
-        |> deliverOnMainQueue).start(next: { [weak self] value in
-            if let strongSelf = self {
-                if strongSelf.showCallsTab != value {
-                    strongSelf.showCallsTab = value
-                    strongSelf.rootController.updateRootControllers(showCallsTab: value, showNewsTab: strongSelf.showNewsTab)
-                }
-            }
+        self.showCallsTabDisposable = (combineLatest(showCallsTabSignal |> distinctUntilChanged, exteraTabAppearance)
+        |> deliverOnMainQueue).start(next: { [weak self] value, navigation in
+            guard let self else { return }
+            self.showCallsTab = value && !navigation.hidesCalls
+            self.rootController.updateRootControllers(showCallsTab: self.showCallsTab, showNewsTab: self.showNewsTab)
         })
 
         self.showNewsTabDisposable = (context.appConfiguration

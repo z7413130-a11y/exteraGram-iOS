@@ -31,11 +31,12 @@ public enum ExteraPreferences {
     public static let hideFloatingButton = ExteraPreference<Bool>("hideFloatingButton", .appearance, false)
     public static let hideDialogsSearchBar = ExteraPreference<Bool>("hideDialogsSearchBar", .appearance, false)
     public static let senderMiniAvatars = ExteraPreference<Bool>("senderMiniAvatars", .appearance, true)
-    public static let titleText = ExteraPreference<Int>("titleText", .appearance, 0)
+    // Keep Telegram's existing iOS title until the user chooses an alternative.
+    public static let titleText = ExteraPreference<Int>("titleText", .appearance, ExteraChatListTitle.chats.rawValue)
     public static let tabIcons = ExteraPreference<Int>("tabIcons", .appearance, 1)
     public static let tabCounterMode = ExteraPreference<Int>("tabCounterMode", .appearance, 0)
     public static let hideAllChats = ExteraPreference<Bool>("hideAllChats", .appearance, false)
-    public static let squareFab = ExteraPreference<Bool>("squareFab", .appearance, true)
+    public static let squareFab = ExteraPreference<Bool>("squareFab", .appearance, false)
     public static let sectionRadius = ExteraPreference<Double>("sectionRadius", .appearance, 20.0)
     public static let sectionsSeparatedHeaders = ExteraPreference<Bool>("sectionsSeparatedHeaders", .appearance, true)
     public static let newLoadingStyle = ExteraPreference<Bool>("newLoadingStyle", .appearance, true)
@@ -80,7 +81,7 @@ public enum ExteraPreferences {
     public static let replyColors = ExteraPreference<Bool>("replyColors", .chats, true)
     public static let replyEmoji = ExteraPreference<Bool>("replyEmoji", .chats, true)
     public static let replyBackground = ExteraPreference<Bool>("replyBackground", .chats, true)
-    public static let stickerShape = ExteraPreference<Int>("stickerShape", .chats, 1)
+    public static let stickerShape = ExteraPreference<Int>("stickerShape", .chats, ExteraStickerShape.standard.rawValue)
     public static let unlimitedRecentStickers = ExteraPreference<Bool>("unlimitedRecentStickers", .chats, false)
     public static let hideReactionsInPrivateChats = ExteraPreference<Bool>("hideReactionsInPrivateChats", .chats, false)
     public static let hideReactionsInChannels = ExteraPreference<Bool>("hideReactionsInChannels", .chats, false)
@@ -188,10 +189,14 @@ public enum ExteraPreferences {
     public static let confirmGifSend = ExteraPreference<Bool>("ios.confirmGifSend", .chats, false)
     public static let confirmCall = ExteraPreference<Bool>("ios.confirmCall", .chats, false)
     public static let hideVideoRecording = ExteraPreference<Bool>("ios.hideVideoRecording", .chats, false)
+    public static let pillStack = ExteraPreference<ExteraPillConfiguration>("ios.pillStack", .appearance, ExteraPillConfiguration())
+    public static let rootTabOrder = ExteraPreference<[ExteraTab]>("ios.rootTabOrder", .appearance, ExteraTab.allCases)
+    public static let hideNewsTab = ExteraPreference<Bool>("ios.hideNewsTab", .appearance, false)
 
     static let iOSDefinitions = [
         translateDrafts.definition, hideCallsTab.definition, hidePremiumBadges.definition, hideAnimatedEmoji.definition,
         confirmStickerSend.definition, confirmGifSend.definition, confirmCall.definition, hideVideoRecording.definition,
+        pillStack.definition, rootTabOrder.definition, hideNewsTab.definition,
     ]
 
     public static let androidDefinitions: [ExteraSettingDefinition] = [

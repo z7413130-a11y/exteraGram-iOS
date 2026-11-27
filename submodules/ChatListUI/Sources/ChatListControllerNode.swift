@@ -1199,6 +1199,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     private var tapRecognizer: UITapGestureRecognizer?
     var navigationBar: NavigationBar?
     let navigationBarView = ComponentView<Empty>()
+    private var exteraSnow: ExteraSnowView?
     weak var controller: ChatListControllerImpl?
     
     private var toolbar: ComponentView<Empty>?
@@ -1567,6 +1568,30 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
             )
         }
         
+        if let controller = self.controller, case .chatList(.root) = controller.location,
+           !controller.previewing, !self.isReorderingFilters, self.isSearchDisplayControllerActive == nil {
+            let configuration = ExteraSettingsStore.shared.value(for: ExteraPreferences.pillStack).normalized
+            if !configuration.widgets.isEmpty {
+                let component = ExteraPillPanel(configuration: configuration, theme: self.presentationData.theme,
+                    language: self.presentationData.strings.baseLanguageCode, proxyEnabled: controller.exteraProxyEnabled,
+                    active: controller.exteraEffectsVisible, selection: { [weak self] widget in
+                        guard let self else { return }
+                        switch widget {
+                        case .proxy:
+                            self.controller?.push(self.context.sharedContext.makeProxySettingsController(context: self.context))
+                        case .memory:
+                            self.effectiveContainerNode.currentItemNode.interaction?.openStorageManagement()
+                        }
+                    })
+                let panel = HeaderPanelContainerComponent.Panel(key: "exteraPills", orderIndex: 10,
+                    beforeTabs: configuration.aboveFolders, component: AnyComponent(component))
+                if configuration.aboveFolders {
+                    panels.insert(panel, at: 0)
+                } else {
+                    panels.append(panel)
+                }
+            }
+        }
         var navigationHeaderPanels: AnyComponent<Empty>?
         if self.controller?.tabContainerData != nil || !panels.isEmpty {
             var tabs: AnyComponent<Empty>?
@@ -1599,11 +1624,15 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 }
                 
                 let isEditing = self.isReorderingFilters || (self.mainContainerNode.currentItemNode.currentState.editing && !self.didBeginSelectingChatsWhileEditing)
+                let iconMode = ExteraFolderIcons(rawValue: ExteraSettingsStore.shared.value(for: ExteraPreferences.tabIcons)) ?? .text
+                let hideAll = ExteraSettingsStore.shared.value(for: ExteraPreferences.hideAllChats)
+                    && !isEditing && self.mainContainerNode.currentItemFilter != .all
+                let entries = hideAll ? tabContainerData.0.filter { $0.id != .all } : tabContainerData.0
                 
                 tabs = AnyComponent(HorizontalTabsComponent(
                     context: self.context,
                     theme: self.presentationData.theme,
-                    tabs: tabContainerData.0.map { entry -> HorizontalTabsComponent.Tab in
+                    tabs: entries.map { entry -> HorizontalTabsComponent.Tab in
                         let id: HorizontalTabsComponent.Tab.Id
                         let title: HorizontalTabsComponent.Tab.Title
                         var badge: HorizontalTabsComponent.Tab.Badge?
@@ -1626,9 +1655,24 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                             }
                         }
                         
+                        let content: HorizontalTabsComponent.Tab.Content
+                        if iconMode == .text {
+                            content = .title(title)
+                        } else {
+                            let symbols = ["folder", "tray", "bookmark", "person.2", "bubble.left", "star"]
+                            let symbol: String
+                            switch entry.id {
+                            case .all: symbol = "square.stack"
+                            case let .filter(id): symbol = symbols[Int(UInt32(bitPattern: id) % UInt32(symbols.count))]
+                            }
+                            content = .custom(AnyComponent(ExteraFolderLabel(
+                                title: iconMode == .icons ? "" : title.text, icon: symbol,
+                                color: self.presentationData.theme.list.itemPrimaryTextColor
+                            )))
+                        }
                         return HorizontalTabsComponent.Tab(
                             id: id,
-                            content: .title(title),
+                            content: content,
                             badge: badge,
                             action: { [weak self] in
                                 guard let self, let tabContainerData = self.controller?.tabContainerData else {
@@ -1701,6 +1745,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                                     self.controller?.askForFilterRemoval(id: id)
                                 }
                             },
+                            accessibilityLabel: title.text,
                             accessibilityValue: accessibilityValue,
                             deleteAccessibilityLabel: self.presentationData.strings.Common_Delete,
                             contextAccessibilityLabel: self.presentationData.strings.Common_More
@@ -1820,6 +1865,20 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 self.view.addSubview(navigationBarComponentView)
             }
             transition.setFrame(view: navigationBarComponentView, frame: CGRect(origin: CGPoint(), size: navigationBarSize))
+            if let controller = self.controller, case .chatList(.root) = controller.location,
+               !controller.previewing, self.isSearchDisplayControllerActive == nil,
+               ExteraSettingsStore.shared.value(for: ExteraPreferences.forceSnow) {
+                let snow = self.exteraSnow ?? ExteraSnowView(frame: .zero)
+                if snow.superview !== navigationBarComponentView {
+                    navigationBarComponentView.addSubview(snow)
+                    self.exteraSnow = snow
+                }
+                snow.frame = CGRect(origin: .zero, size: navigationBarSize)
+                snow.update(active: controller.exteraEffectsVisible, color: self.presentationData.theme.list.itemAccentColor)
+            } else {
+                self.exteraSnow?.removeFromSuperview()
+                self.exteraSnow = nil
+            }
             
             return (navigationBarSize.height, 0.0)
         } else {

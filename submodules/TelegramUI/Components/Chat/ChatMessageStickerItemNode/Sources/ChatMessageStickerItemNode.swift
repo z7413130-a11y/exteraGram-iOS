@@ -696,14 +696,16 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
             } else {
                 dateFormat = .regular
             }
-            let dateText = stringForMessageTimestampStatus(context: item.context, message: EngineMessage(item.message), dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: dateFormat, associatedData: item.associatedData)
+            let stickerTime = isEmoji ? ExteraStickerTime.standard : (ExteraStickerTime(rawValue: ExteraSettingsStore.shared.value(for: ExteraPreferences.stickerTimeMode)) ?? .standard)
+            let stickerShape = isEmoji ? ExteraStickerShape.standard : (ExteraStickerShape(rawValue: ExteraSettingsStore.shared.value(for: ExteraPreferences.stickerShape)) ?? .standard)
+            let dateText = stickerTime == .hidden ? "" : stringForMessageTimestampStatus(context: item.context, message: EngineMessage(item.message), dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: dateFormat, associatedData: item.associatedData)
 
             // Without bubbles a sticker is headed by the rule text is (the first of a run, every post of a channel without
             // profiles, never in a secret chat) with the header text messages have: the name, just the time and a post's
             // views; who signed a post is in its context menu.
             var bubblelessHeader: (size: CGSize, nameHeight: CGFloat, apply: () -> ChatMessageBubblelessHeaderNode)?
             if isBubbleless && chatMessageBubblelessHeadsRow(isMergedWithPrevious: mergedTop.merged, isChannelPostWithoutProfiles: chatMessageBubblelessIsChannelPostWithoutProfiles(chatPeer: item.message.peers[item.message.id.peerId].flatMap({ EnginePeer($0) })), chatPeerId: item.message.id.peerId), let author = item.message.author ?? item.message.peers[item.message.id.peerId] {
-                let headerDateText = stringForMessageTimestampStatus(context: item.context, message: EngineMessage(item.message), dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: .regular, associatedData: item.associatedData, ignoreAuthor: true)
+                let headerDateText = stickerTime == .hidden ? "" : stringForMessageTimestampStatus(context: item.context, message: EngineMessage(item.message), dateTimeFormat: item.presentationData.dateTimeFormat, nameDisplayOrder: item.presentationData.nameDisplayOrder, strings: item.presentationData.strings, format: .regular, associatedData: item.associatedData, ignoreAuthor: true)
                 let column = chatMessageBubblelessColumn(baseWidth: params.width - params.leftInset - params.rightInset, leftInset: params.leftInset, hasAvatarColumn: hasAvatar, inSelection: false, deliveryFailedInset: 0.0, hasSideButtons: false, widthFill: layoutConstants.bubble.maximumWidthFill)
                 bubblelessHeader = (bubblelessHeaderLayout ?? ChatMessageBubblelessHeaderNode.asyncLayout(nil))(item, EnginePeer(author), headerDateText, (item.message.attributes.first(where: { $0 is ViewCountMessageAttribute }) as? ViewCountMessageAttribute)?.count, column.width)
             }
@@ -1060,6 +1062,9 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
             }
             var dateAndStatusFrame = CGRect(origin: CGPoint(x: min(layoutSize.width - dateAndStatusSize.width - 14.0, max(displayLeftInset, updatedImageFrame.maxX - dateOffset.x)), y: updatedImageFrame.maxY - dateOffset.y), size: dateAndStatusSize)
             
+            dateAndStatusFrame = stickerTime.statusFrame(dateAndStatusFrame, image: updatedImageFrame, leading: displayLeftInset,
+                trailing: layoutSize.width - params.rightInset - 14, incoming: incoming)
+
             let baseShareButtonSize = CGSize(width: 30.0, height: 60.0)
             var baseShareButtonFrame = CGRect(origin: CGPoint(x: !incoming ? updatedImageFrame.minX - baseShareButtonSize.width - 6.0 : updatedImageFrame.maxX + 6.0, y: updatedImageFrame.maxY - 10.0 - baseShareButtonSize.height - 4.0), size: baseShareButtonSize)
             if isEmoji && incoming {
@@ -1232,6 +1237,9 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                     strongSelf.containerNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     strongSelf.contextSourceNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     strongSelf.contextSourceNode.contentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
+                    let stickerRadius = stickerShape.radius(bubbleRadius: item.presentationData.chatBubbleCorners.mainRadius)
+                    strongSelf.imageNode.layer.cornerRadius = stickerRadius
+                    strongSelf.imageNode.layer.masksToBounds = stickerRadius > 0
                     strongSelf.contextSourceNode.contentRect = strongSelf.imageNode.frame
                     strongSelf.containerNode.targetNodeForActivationProgressContentRect = strongSelf.contextSourceNode.contentRect
                     

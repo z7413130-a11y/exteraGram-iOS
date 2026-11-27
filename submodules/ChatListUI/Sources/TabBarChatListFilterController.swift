@@ -8,7 +8,7 @@ import AccountContext
 import TelegramUIPreferences
 import TelegramCore
 
-public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatListFilter, Int, Bool)]), NoError> {
+public func chatListFilterItems(context: AccountContext, countOnlyUnmuted: Bool = false) -> Signal<(Int, [(ChatListFilter, Int, Bool)]), NoError> {
     // A folder never names a secret chat. ChatListFilterPredicate resolves a secret chat's identity
     // to its associated cloud user, so including or excluding the user silently does the same to the
     // secret chat; and a folder can pin one, which ChatListFilterIncludePeers deliberately keeps out
@@ -214,7 +214,7 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
                     count += correction.count
                     unmutedUnreadCount += correction.unmuted
                 }
-                result.append((filter, max(0, count), unmutedUnreadCount > 0))
+                result.append((filter, max(0, countOnlyUnmuted ? unmutedUnreadCount : count), unmutedUnreadCount > 0))
             }
             
             return (totalBadge, result)

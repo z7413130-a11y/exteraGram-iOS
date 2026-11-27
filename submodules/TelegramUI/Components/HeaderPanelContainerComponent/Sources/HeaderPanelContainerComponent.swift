@@ -13,11 +13,13 @@ public final class HeaderPanelContainerComponent: Component {
     public final class Panel: Equatable {
         public let key: AnyHashable
         public let orderIndex: Int
+        public let beforeTabs: Bool
         public let component: AnyComponent<Empty>
         
-        public init(key: AnyHashable, orderIndex: Int, component: AnyComponent<Empty>) {
+        public init(key: AnyHashable, orderIndex: Int, beforeTabs: Bool = false, component: AnyComponent<Empty>) {
             self.key = key
             self.orderIndex = orderIndex
+            self.beforeTabs = beforeTabs
             self.component = component
         }
         
@@ -25,7 +27,7 @@ public final class HeaderPanelContainerComponent: Component {
             if lhs.key != rhs.key {
                 return false
             }
-            if lhs.orderIndex != rhs.orderIndex {
+            if lhs.orderIndex != rhs.orderIndex || lhs.beforeTabs != rhs.beforeTabs {
                 return false
             }
             if lhs.component != rhs.component {
@@ -133,46 +135,52 @@ public final class HeaderPanelContainerComponent: Component {
             
             var isFirstPanel = true
             
-            if let tabs = component.tabs {
-                let tabsView: ComponentView<Empty>
-                var tabsTransition = transition
-                if let current = self.tabsView {
-                    tabsView = current
-                } else {
-                    tabsTransition = tabsTransition.withAnimation(.none)
-                    tabsView = ComponentView()
-                    self.tabsView = tabsView
-                }
-                let tabsSize = tabsView.update(
-                    transition: tabsTransition,
-                    component: tabs,
-                    environment: {},
-                    containerSize: CGSize(width: availableSize.width - sideInset * 2.0, height: 40.0)
-                )
-                let tabsFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height), size: tabsSize)
-                if let tabsComponentView = tabsView.view {
-                    if tabsComponentView.superview == nil {
-                        self.contentContainer.addSubview(tabsComponentView)
-                        if let tabsComponentView = tabsComponentView as? HeaderPanelContainerChildView {
-                            tabsComponentView.setOverlayContainerView(overlayContainerView: self.backgroundContainer.contentView)
-                        }
-                        transition.animateAlpha(view: tabsComponentView, from: 0.0, to: 1.0)
+            var tabsLaidOut = false
+            func layoutTabs() {
+                guard !tabsLaidOut else { return }
+                tabsLaidOut = true
+                if let tabs = component.tabs {
+                    let tabsView: ComponentView<Empty>
+                    var tabsTransition = transition
+                    if let current = self.tabsView {
+                        tabsView = current
+                    } else {
+                        tabsTransition = tabsTransition.withAnimation(.none)
+                        tabsView = ComponentView()
+                        self.tabsView = tabsView
                     }
-                    tabsTransition.setFrame(view: tabsComponentView, frame: tabsFrame)
-                }
-                size.height += tabsSize.height
-                isFirstPanel = false
-            } else if let tabsView = self.tabsView {
-                self.tabsView = nil
-                if let tabsComponentView = tabsView.view {
-                    transition.setAlpha(view: tabsComponentView, alpha: 0.0, completion: { [weak tabsComponentView] _ in
-                        tabsComponentView?.removeFromSuperview()
-                    })
+                    let tabsSize = tabsView.update(
+                        transition: tabsTransition,
+                        component: tabs,
+                        environment: {},
+                        containerSize: CGSize(width: availableSize.width - sideInset * 2.0, height: 40.0)
+                    )
+                    let tabsFrame = CGRect(origin: CGPoint(x: 0.0, y: size.height), size: tabsSize)
+                    if let tabsComponentView = tabsView.view {
+                        if tabsComponentView.superview == nil {
+                            self.contentContainer.addSubview(tabsComponentView)
+                            if let tabsComponentView = tabsComponentView as? HeaderPanelContainerChildView {
+                                tabsComponentView.setOverlayContainerView(overlayContainerView: self.backgroundContainer.contentView)
+                            }
+                            transition.animateAlpha(view: tabsComponentView, from: 0.0, to: 1.0)
+                        }
+                        tabsTransition.setFrame(view: tabsComponentView, frame: tabsFrame)
+                    }
+                    size.height += tabsSize.height
+                    isFirstPanel = false
+                } else if let tabsView = self.tabsView {
+                    self.tabsView = nil
+                    if let tabsComponentView = tabsView.view {
+                        transition.setAlpha(view: tabsComponentView, alpha: 0.0, completion: { [weak tabsComponentView] _ in
+                            tabsComponentView?.removeFromSuperview()
+                        })
+                    }
                 }
             }
-            
+
             var validPanelKeys: [AnyHashable] = []
             for panel in component.panels {
+                if !panel.beforeTabs { layoutTabs() }
                 validPanelKeys.append(panel.key)
                 
                 var panelTransition = transition
@@ -224,6 +232,8 @@ public final class HeaderPanelContainerComponent: Component {
                 isFirstPanel = false
             }
             
+            layoutTabs()
+
             var removedPanelKeys: [AnyHashable] = []
             for (key, panelView) in self.panelViews {
                 if !validPanelKeys.contains(key) {

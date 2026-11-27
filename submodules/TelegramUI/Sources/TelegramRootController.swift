@@ -215,15 +215,15 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         // Created even when hidden, like the calls tab: `updateRootControllers` shows and hides it.
         let newsController = NewsScreen(context: self.context)
         
-        var controllers: [ViewController] = []
+        var controllers: [ExteraTab: ViewController] = [.chats: chatListController]
+        let navigation = ExteraNavigationAppearance()
         
         if showCallsTab {
-            controllers.append(callListController)
+            controllers[.calls] = callListController
         }
-        if showNewsTab {
-            controllers.append(newsController)
+        if showNewsTab && !navigation.hidesNews {
+            controllers[.news] = newsController
         }
-        controllers.append(chatListController)
         
         var restoreSettignsController: (ViewController & SettingsController)?
         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
@@ -242,10 +242,11 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             strongSelf.pushViewController(debugController(sharedContext: strongSelf.context.sharedContext, context: strongSelf.context))
         }
         accountSettingsController.parentController = self
-        controllers.append(accountSettingsController)
+        controllers[.settings] = accountSettingsController
                 
-        let chatsIndex = controllers.firstIndex(where: { $0 === chatListController }) ?? 0
-        tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : chatsIndex)
+        let ordered = navigation.order.compactMap { controllers[$0] }
+        let selectedController: ViewController = restoreSettignsController != nil ? accountSettingsController : chatListController
+        tabBarController.setControllers(ordered, selectedIndex: ordered.firstIndex(where: { $0 === selectedController }))
         
         self.callListController = callListController
         self.newsController = newsController
@@ -259,15 +260,17 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
             return
         }
-        var controllers: [ViewController] = []
+        let navigation = ExteraNavigationAppearance()
+        var byTab: [ExteraTab: ViewController] = [:]
         if showCallsTab {
-            controllers.append(self.callListController!)
+            byTab[.calls] = self.callListController
         }
-        if showNewsTab, let newsController = self.newsController {
-            controllers.append(newsController)
+        if showNewsTab && !navigation.hidesNews {
+            byTab[.news] = self.newsController
         }
-        controllers.append(self.chatListController!)
-        controllers.append(self.accountSettingsController!)
+        byTab[.chats] = self.chatListController
+        byTab[.settings] = self.accountSettingsController
+        let controllers = navigation.order.compactMap { byTab[$0] }
 
         // A removed selected tab would otherwise fall back to index 0: select Chats instead.
         var selectedIndex: Int?

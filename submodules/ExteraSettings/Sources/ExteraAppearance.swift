@@ -26,6 +26,8 @@ public struct ExteraChatVisualSettings: Equatable {
     private let hideTail: Bool
     private let editedIcon: Bool
     private let stickerSize: Double
+    private let stickerShape: Int
+    private let stickerTime: Int
     private let hidePremium: Bool
     private let freezeEmoji: Bool
     private let hideVideoRecording: Bool
@@ -38,6 +40,8 @@ public struct ExteraChatVisualSettings: Equatable {
         self.hideTail = store.value(for: ExteraPreferences.removeMessageTail)
         self.editedIcon = store.value(for: ExteraPreferences.replaceEditedWithIcon)
         self.stickerSize = store.value(for: ExteraPreferences.stickerSize)
+        self.stickerShape = store.value(for: ExteraPreferences.stickerShape)
+        self.stickerTime = store.value(for: ExteraPreferences.stickerTimeMode)
         self.hidePremium = store.value(for: ExteraPreferences.hidePremiumBadges)
         self.freezeEmoji = store.value(for: ExteraPreferences.hideAnimatedEmoji)
         self.hideVideoRecording = store.value(for: ExteraPreferences.hideVideoRecording)
