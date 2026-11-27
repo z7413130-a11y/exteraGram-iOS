@@ -151,6 +151,7 @@ typedef enum {
     
     UIView *_wrapperView;
     UIView *_startButton;
+    UIImageView *_brandImageView;
     
     bool _loadedView;
     
@@ -278,8 +279,12 @@ typedef enum {
 }
 
 - (void)animateIn {
-    CGPoint logoTargetPosition = _glkView.center;
-    _glkView.center = CGPointMake(self.view.bounds.size.width / 2.0, self.view.bounds.size.height / 2.0);
+    if (UIAccessibilityIsReduceMotionEnabled()) {
+        return;
+    }
+    UIView *animatedLogo = (_brandImageView != nil && _currentPage == 0) ? _brandImageView : _glkView;
+    CGPoint logoTargetPosition = animatedLogo.center;
+    animatedLogo.center = CGPointMake(self.view.bounds.size.width / 2.0, self.view.bounds.size.height / 2.0);
     
     RMIntroPageView *firstPage = (RMIntroPageView *)[_pageViews firstObject];
     CGPoint headerTargetPosition = firstPage.headerLabel.center;
@@ -294,24 +299,24 @@ typedef enum {
     CGPoint buttonTargetPosition = _startButton.center;
     _startButton.center = CGPointMake(buttonTargetPosition.x, buttonTargetPosition.y + 220.0);
     
-    _glkView.transform = CGAffineTransformMakeScale(0.66, 0.66);
+    animatedLogo.transform = CGAffineTransformMakeScale(0.66, 0.66);
         
     [UIView animateWithDuration:0.65 delay:0.15 usingSpringWithDamping:1.2f initialSpringVelocity:0.0 options:kNilOptions animations:^{
-        _glkView.center = logoTargetPosition;
+        animatedLogo.center = logoTargetPosition;
         firstPage.headerLabel.center = headerTargetPosition;
         firstPage.descriptionLabel.center = descriptionTargetPosition;
         _pageControl.center = pageControlTargetPosition;
         _startButton.center = buttonTargetPosition;
-        _glkView.transform = CGAffineTransformIdentity;
+        animatedLogo.transform = CGAffineTransformIdentity;
     } completion:nil];
     
-    _glkView.alpha = 0.0;
+    animatedLogo.alpha = 0.0;
     _pageScrollView.alpha = 0.0;
     _pageControl.alpha = 0.0;
     _startButton.alpha = 0.0;
     
     [UIView animateWithDuration:0.3 delay:0.15 options:kNilOptions animations:^{
-        _glkView.alpha = 1.0;
+        animatedLogo.alpha = 1.0;
         _pageScrollView.alpha = 1.0;
         _pageControl.alpha = 1.0;
         _startButton.alpha = 1.0;
@@ -351,6 +356,7 @@ typedef enum {
         
         [self setupGL];
         [self.view addSubview:_glkView];
+        _glkView.hidden = (_brandImageView != nil || self.brandImage != nil) && _currentPage == 0;
         
         [self startTimer];
         _isOpenGLLoaded = true;
@@ -401,6 +407,14 @@ typedef enum {
     
     _wrapperView = [[UIScrollView alloc]initWithFrame:self.view.bounds];
     [self.view addSubview:_wrapperView];
+    if (self.brandImage != nil) {
+        _brandImageView = [[UIImageView alloc] initWithImage:self.brandImage];
+        _brandImageView.contentMode = UIViewContentModeScaleAspectFit;
+        _brandImageView.layer.cornerRadius = 26.0;
+        _brandImageView.clipsToBounds = true;
+        _brandImageView.isAccessibilityElement = false;
+        [self.view addSubview:_brandImageView];
+    }
     
     _pageScrollView = [[UIScrollView alloc]initWithFrame:self.view.bounds];
     _pageScrollView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
@@ -418,7 +432,8 @@ typedef enum {
     
     for (NSUInteger i = 0; i < _headlines.count; i++)
     {
-        RMIntroPageView *p = [[RMIntroPageView alloc]initWithFrame:CGRectMake(i * self.view.bounds.size.width, 0, self.view.bounds.size.width, 0) headline:[_headlines objectAtIndex:i] description:[_descriptions objectAtIndex:i] color:_primaryColor];
+        NSString *headline = i == 0 && self.brandName.length != 0 ? self.brandName : [_headlines objectAtIndex:i];
+        RMIntroPageView *p = [[RMIntroPageView alloc]initWithFrame:CGRectMake(i * self.view.bounds.size.width, 0, self.view.bounds.size.width, 0) headline:headline description:[_descriptions objectAtIndex:i] color:_primaryColor];
         p.opaque = true;
         p.clearsContextBeforeDrawing = false;
         [_pageViews addObject:p];
@@ -446,6 +461,14 @@ typedef enum {
 }
 
 - (UIView *)createAnimationSnapshot {
+    if (_brandImageView != nil && !_brandImageView.hidden) {
+        UIImageView *snapshot = [[UIImageView alloc] initWithFrame:_brandImageView.frame];
+        snapshot.image = _brandImageView.image;
+        snapshot.contentMode = _brandImageView.contentMode;
+        snapshot.layer.cornerRadius = _brandImageView.layer.cornerRadius;
+        snapshot.clipsToBounds = true;
+        return snapshot;
+    }
     UIImage *image = _glkView.snapshot;
     UIImageView *imageView = [[UIImageView alloc] initWithFrame:_glkView.frame];
     imageView.image = image;
@@ -607,6 +630,8 @@ typedef enum {
     
     _pageControl.frame = CGRectMake(0, pageControlY, self.view.bounds.size.width, 7);
     _glkView.frame = CGRectChangedOriginY(_glkView.frame, glViewY - statusBarHeight);
+    CGFloat brandSide = MIN(120.0, MAX(72.0, pageY - glViewY - 58.0));
+    _brandImageView.frame = CGRectMake(floor((self.view.bounds.size.width - brandSide) / 2.0), glViewY - statusBarHeight + 24.0, brandSide, brandSide);
     
     CGFloat startButtonWidth = MIN(430.0 - 48.0, self.view.bounds.size.width - 48.0f);
     UIView *startButton = self.createStartButton(startButtonWidth);
@@ -651,7 +676,9 @@ typedef enum {
 
 - (void)updateAndRender
 {
-    [_glkView display];
+    if (!_glkView.hidden) {
+        [_glkView display];
+    }
 }
 
 - (void)dealloc
@@ -767,6 +794,10 @@ NSInteger _current_page_end;
     }
     
     [_pageControl setCurrentPage:_currentPage];
+    if (_brandImageView != nil) {
+        _brandImageView.hidden = _currentPage != 0;
+        _glkView.hidden = _currentPage == 0;
+    }
 }
 
 - (void)accessibilityShowPage:(NSInteger)page {

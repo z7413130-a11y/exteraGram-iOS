@@ -34,10 +34,13 @@ private extension ExteraSettingsCategory {
     }
 }
 
-private struct SettingsRow: ItemListNodeEntry {
+struct SettingsRow: ItemListNodeEntry {
     enum Kind: Equatable {
         case brand(String)
         case category(ExteraSettingsCategory)
+        case link(ExteraAppearancePage)
+        case preview(ExteraLivePreview)
+        case appIcon(String, Bool)
         case toggle(Bool)
         case disclosure(String)
         case language(Bool)
@@ -57,6 +60,21 @@ private struct SettingsRow: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let action = arguments as! (Int, Bool?) -> Void
         switch self.kind {
+        case let .preview(preview):
+            return ExteraAppearancePreviewItem(preview: preview, presentationData: presentationData)
+        case let .appIcon(imageName, selected):
+            return ItemListCheckboxItem(
+                presentationData: presentationData, systemStyle: .glass,
+                icon: generateScaledImage(image: UIImage(bundleImageName: imageName), size: CGSize(width: 30, height: 30), opaque: false),
+                title: self.title, style: .right, checked: selected, zeroSeparatorInsets: false,
+                maximumNumberOfLines: 0, sectionId: self.section, action: { action(self.stableId, nil) }
+            )
+        case let .link(page):
+            return ItemListDisclosureItem(
+                presentationData: presentationData, systemStyle: .glass, icon: page.icon,
+                title: self.title, label: "", sectionId: self.section, style: .blocks,
+                action: { action(self.stableId, nil) }
+            )
         case let .brand(version):
             return ItemListDisclosureItem(
                 presentationData: presentationData, systemStyle: .glass, icon: exteraMenuIcon,
@@ -106,8 +124,11 @@ private struct SettingsRow: ItemListNodeEntry {
 
 private enum RowID: Int {
     case translation, targetLanguage, reset
-    case stories, counters, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, centerTitle, dividers, privateReactions, channelReactions, groupReactions
+    case stories, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, centerTitle, dividers, privateReactions, channelReactions, groupReactions
     case details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, plugins, about
+    case uniformAvatar, gooeyAvatar, forceSnow, headerStatus, headerTitle, folderIcons, folderCounters, stickerShape, stickerTime
+    case hiddenAllChats, composeInMenu, compactCompose
+    case hideNews, tabOrder
 }
 
 private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String, ExteraPreference<Bool>)? {
@@ -123,6 +144,14 @@ private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String,
     case .privateReactions: return (strings.text("Hide reactions in private chats", "Скрыть реакции в личных чатах"), ExteraPreferences.hideReactionsInPrivateChats)
     case .channelReactions: return (strings.text("Hide reactions in channels", "Скрыть реакции в каналах"), ExteraPreferences.hideReactionsInChannels)
     case .groupReactions: return (strings.text("Hide reactions in groups", "Скрыть реакции в группах"), ExteraPreferences.hideReactionsInGroups)
+    case .uniformAvatar: return (strings.text("Use the same radius for forums", "Одинаковое скругление для форумов"), ExteraPreferences.singleCornerRadius)
+    case .gooeyAvatar: return (strings.text("Animate avatar previews", "Анимировать предпросмотр аватарок"), ExteraPreferences.gooeyAvatarAnimation)
+    case .forceSnow: return (strings.text("Falling snow", "Падающий снег"), ExteraPreferences.forceSnow)
+    case .headerStatus: return (strings.text("Hide Premium and emoji status in the header", "Скрыть Premium и эмодзи-статус в верхней панели"), ExteraPreferences.hideActionBarStatus)
+    case .hiddenAllChats: return (strings.text("Hide the All Chats folder when inactive", "Скрывать папку «Все чаты», когда она не выбрана"), ExteraPreferences.hideAllChats)
+    case .composeInMenu: return (strings.text("Move New Chat into the menu", "Перенести создание чата в меню"), ExteraPreferences.hideFloatingButton)
+    case .compactCompose: return (strings.text("Use a squarer New Chat button", "Уменьшить скругление кнопки создания чата"), ExteraPreferences.squareFab)
+    case .hideNews: return (strings.text("Hide the News tab when available", "Скрыть вкладку «Новости», если она доступна"), ExteraPreferences.hideNewsTab)
     default: return nil
     }
 }
@@ -132,6 +161,17 @@ private func gestureRowTitle(_ row: RowID, _ strings: ExteraStrings) -> String {
     case .doubleTapIncoming: return strings.text("Double tap on incoming messages", "Двойное нажатие на входящих")
     case .doubleTapOutgoing: return strings.text("Double tap on outgoing messages", "Двойное нажатие на исходящих")
     default: return strings.text("Message swipe", "Свайп по сообщению")
+    }
+}
+
+private func appearanceChoiceTitle(_ row: RowID, _ strings: ExteraStrings) -> String {
+    switch row {
+    case .headerTitle: return strings.text("Header title", "Заголовок верхней панели")
+    case .folderIcons: return strings.text("Folder labels", "Подписи папок")
+    case .folderCounters: return strings.text("Unread folder counters", "Счётчики непрочитанного в папках")
+    case .stickerShape: return strings.text("Sticker shape", "Форма стикеров")
+    case .stickerTime: return strings.text("Sticker timestamp", "Время на стикерах")
+    default: return ""
     }
 }
 
@@ -169,10 +209,20 @@ public func exteraSettingsController(context: AccountContext) -> ViewController 
     return controller
 }
 
-private func exteraCategoryController(context: AccountContext, category: ExteraSettingsCategory) -> ViewController {
+private func exteraCategoryController(context: AccountContext, category: ExteraSettingsCategory, appearancePage: ExteraAppearancePage? = nil) -> ViewController {
     let store = ExteraSettingsStore.shared
     weak var settingsController: ItemListController?
     let action: (Int, Bool?) -> Void = { id, value in
+        if id >= 1000, let page = ExteraAppearancePage(rawValue: id - 1000) {
+            let controller: ViewController
+            switch page {
+            case .appIcons: controller = exteraAppIconsController(context: context)
+            case .pills: controller = exteraPillSettingsController(context: context)
+            default: controller = exteraCategoryController(context: context, category: .appearance, appearancePage: page)
+            }
+            settingsController?.push(controller)
+            return
+        }
         guard let row = RowID(rawValue: id) else { return }
         let strings = ExteraStrings(languageCode: context.sharedContext.currentPresentationData.with { $0 }.strings.baseLanguageCode)
         if let value, let (_, preference) = appearanceToggle(row, strings) {
@@ -180,17 +230,32 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
             return
         }
         switch row {
-        case .counters:
-            if let value { store.set(value ? 2 : 0, for: ExteraPreferences.tabCounterMode) }
         case .dividers:
             if let value { store.set(value ? 0 : 1, for: ExteraPreferences.dividerStyle) }
         case .avatarCorners:
             settingsController?.push(exteraSliderController(context: context, title: strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"),
-                preference: ExteraPreferences.avatarCorners, limits: 0...28, rangeLabels: ("0%", "100%")))
+                preference: ExteraPreferences.avatarCorners, limits: 0...28, rangeLabels: ("0%", "100%"), preview: .avatars))
         case .stickerSize:
             settingsController?.push(exteraSliderController(context: context, title: strings.text("Sticker size", "Размер стикеров"),
                 preference: ExteraPreferences.stickerSize, limits: 4...20,
-                rangeLabels: (strings.text("Smaller", "Меньше"), strings.text("Larger", "Больше"))))
+                rangeLabels: (strings.text("Smaller", "Меньше"), strings.text("Larger", "Больше")), preview: .messages))
+        case .headerTitle, .folderIcons, .folderCounters, .stickerShape, .stickerTime:
+            let options: (preference: ExteraPreference<Int>, titles: [String])
+            switch row {
+            case .headerTitle:
+                options = (ExteraPreferences.titleText, ExteraChatListTitle.allCases.map { $0.title(strings) })
+            case .folderIcons:
+                options = (ExteraPreferences.tabIcons, ExteraFolderIcons.allCases.map { $0.title(strings) })
+            case .stickerShape:
+                options = (ExteraPreferences.stickerShape, ExteraStickerShape.allCases.map { $0.title(strings) })
+            case .stickerTime:
+                options = (ExteraPreferences.stickerTimeMode, ExteraStickerTime.allCases.map { $0.title(strings) })
+            default:
+                options = (ExteraPreferences.tabCounterMode, ExteraFolderCounters.allCases.map { $0.title(strings) })
+            }
+            settingsController?.push(exteraChoiceController(context: context, title: appearanceChoiceTitle(row, strings),
+                selectedIndex: { store.value(for: options.preference) }, titles: options.titles,
+                select: { store.set($0, for: options.preference) }))
         case .confirmSticker:
             if let value { store.set(value, for: ExteraPreferences.confirmStickerSend) }
         case .confirmGif:
@@ -211,6 +276,8 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                 select: { store.set(choices[$0].doubleTapSetting(outgoing: outgoing), for: preference) }))
         case .swipe:
             settingsController?.push(exteraSwipeController(context: context))
+        case .tabOrder:
+            settingsController?.push(exteraTabOrderController(context: context))
         case .translation:
             if let value { store.set(value, for: ExteraPreferences.translateDrafts) }
         case .targetLanguage:
@@ -254,21 +321,54 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                 row(.reset, .general, strings.text("Reset exteraGram settings", "Сбросить настройки exteraGram"), .action),
             ]
         case .appearance:
-            let appearanceRows: [RowID] = [.stories, .counters, .callsTab, .premium, .animatedEmoji, .avatarCorners, .stickerSize, .tail, .edited, .search, .centerTitle, .dividers, .privateReactions, .channelReactions, .groupReactions]
-            rows = appearanceRows.compactMap { id -> SettingsRow? in
-                if let (title, preference) = appearanceToggle(id, strings) {
-                    return row(id, .appearance, title, .toggle(store.value(for: preference)))
+            if let appearancePage {
+                let appearanceRows: [RowID]
+                switch appearancePage {
+                case .avatars: appearanceRows = [.avatarCorners, .uniformAvatar, .gooeyAvatar]
+                case .chatList: appearanceRows = [.stories, .search, .dividers, .forceSnow]
+                case .header: appearanceRows = [.centerTitle, .headerStatus, .headerTitle, .composeInMenu, .compactCompose]
+                case .folders: appearanceRows = [.folderIcons, .folderCounters, .hiddenAllChats]
+                case .navigation: appearanceRows = [.callsTab, .hideNews, .tabOrder]
+                case .messages: appearanceRows = [.premium, .animatedEmoji, .stickerSize, .tail, .edited, .privateReactions, .channelReactions, .groupReactions, .stickerShape, .stickerTime]
+                case .appIcons, .pills: appearanceRows = []
                 }
-                switch id {
-                case .counters:
-                    return row(id, .appearance, strings.text("Hide unread counters", "Скрыть счётчики непрочитанных"), .toggle(ExteraAppearance.hidesUnreadCounters))
-                case .dividers:
-                    return row(id, .appearance, strings.text("Hide chat list dividers", "Скрыть разделители списка чатов"), .toggle(ExteraAppearance.hidesDividers))
-                case .avatarCorners:
-                    return row(id, .appearance, strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"), .disclosure("\(Int(ExteraAppearance.avatarCornerFraction * 200))%"))
-                case .stickerSize:
-                    return row(id, .appearance, strings.text("Sticker size", "Размер стикеров"), .disclosure("\(Int((ExteraAppearance.stickerScale * 100).rounded()))%"))
-                default: return nil
+                let preview = appearancePage.preview(store: store, strings: strings).map {
+                    SettingsRow(stableId: -1, section: 0, title: "", kind: .preview($0))
+                }
+                rows = (preview.map { [$0] } ?? []) + appearanceRows.compactMap { id -> SettingsRow? in
+                    if let (title, preference) = appearanceToggle(id, strings) {
+                        return row(id, .appearance, title, .toggle(store.value(for: preference)))
+                    }
+                    switch id {
+                    case .dividers:
+                        return row(id, .appearance, strings.text("Hide chat list dividers", "Скрыть разделители списка чатов"), .toggle(ExteraAppearance.hidesDividers))
+                    case .avatarCorners:
+                        return row(id, .appearance, strings.text("Chat list avatar rounding", "Скругление аватарок в списке чатов"), .disclosure("\(Int(ExteraAppearance.avatarCornerFraction * 200))%"))
+                    case .stickerSize:
+                        return row(id, .appearance, strings.text("Sticker size", "Размер стикеров"), .disclosure("\(Int((ExteraAppearance.stickerScale * 100).rounded()))%"))
+                    case .headerTitle:
+                        let value = ExteraChatListTitle(rawValue: store.value(for: ExteraPreferences.titleText)) ?? .chats
+                        return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
+                    case .folderIcons:
+                        let value = ExteraFolderIcons(rawValue: store.value(for: ExteraPreferences.tabIcons)) ?? .text
+                        return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
+                    case .folderCounters:
+                        let value = ExteraFolderCounters(rawValue: store.value(for: ExteraPreferences.tabCounterMode)) ?? .all
+                        return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
+                    case .stickerShape:
+                        let value = ExteraStickerShape(rawValue: store.value(for: ExteraPreferences.stickerShape)) ?? .standard
+                        return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
+                    case .stickerTime:
+                        let value = ExteraStickerTime(rawValue: store.value(for: ExteraPreferences.stickerTimeMode)) ?? .standard
+                        return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
+                    case .tabOrder:
+                        return row(id, .appearance, strings.text("Tab order", "Порядок вкладок"), .disclosure(""))
+                    default: return nil
+                    }
+                }
+            } else {
+                rows = ExteraAppearancePage.allCases.map { page in
+                    SettingsRow(stableId: 1000 + page.rawValue, section: 0, title: page.title(strings), kind: .link(page))
                 }
             }
         case .chats:
@@ -298,7 +398,7 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
         }
         let data = ItemListPresentationData(presentationData)
         return (
-            ItemListControllerState(presentationData: data, title: .text(strings.category(category)), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
+            ItemListControllerState(presentationData: data, title: .text(appearancePage?.title(strings) ?? strings.category(category)), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action)
         )
     }
@@ -316,10 +416,16 @@ private struct AboutRow: ItemListNodeEntry {
     static func < (lhs: AboutRow, rhs: AboutRow) -> Bool { lhs.stableId < rhs.stableId }
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
-        let openRepository = arguments as! () -> Void
-        if self.stableId == 2 {
+        let openRepository = arguments as! (Int) -> Void
+        if self.stableId >= 2 {
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass,
-                title: self.title, label: self.value, sectionId: self.section, style: .blocks, action: openRepository)
+                title: self.title,
+                attributedTitle: NSAttributedString(string: self.title, attributes: [
+                    .font: Font.regular(presentationData.fontSize.itemListBaseFontSize),
+                    .foregroundColor: presentationData.theme.list.itemPrimaryTextColor,
+                ]),
+                label: self.value, labelStyle: .multilineDetailText, sectionId: self.section, style: .blocks,
+                action: { openRepository(self.stableId) })
         }
         return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass,
             icon: self.stableId == 0 ? exteraSettingsIcon : nil,
@@ -331,17 +437,19 @@ private func exteraAboutController(context: AccountContext) -> ViewController {
     let bundle = Bundle.main
     let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-    let openRepository = {
-        context.sharedContext.applicationBindings.openUrl("https://github.com/z7413130-a11y/exteraGram-iOS")
+    let openRepository: (Int) -> Void = { id in
+        let url = id == 3 ? "https://github.com/exteraSquad/exteraGram" : "https://github.com/z7413130-a11y/exteraGram-iOS"
+        context.sharedContext.applicationBindings.openUrl(url)
     }
     let state = context.sharedContext.presentationData
-    |> map { presentation -> (ItemListControllerState, (ItemListNodeState, () -> Void)) in
+    |> map { presentation -> (ItemListControllerState, (ItemListNodeState, (Int) -> Void)) in
         let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
         let data = ItemListPresentationData(presentation)
         let rows = [
             AboutRow(stableId: 0, title: "exteraGram", value: ""),
             AboutRow(stableId: 1, title: strings.text("Version · Build", "Версия · Сборка"), value: "\(version) · \(build)"),
             AboutRow(stableId: 2, title: strings.text("Project repository", "Репозиторий проекта"), value: "GitHub"),
+            AboutRow(stableId: 3, title: strings.text("Based on exteraGram for Android", "На основе exteraGram для Android"), value: "exteraSquad · GitHub"),
         ]
         return (ItemListControllerState(presentationData: data, title: .text(strings.text("About", "О приложении")),
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
@@ -374,7 +482,7 @@ private func exteraLanguageController(context: AccountContext) -> ViewController
     return ItemListController(context: context, state: state)
 }
 
-private func exteraChoiceController(context: AccountContext, title: String, selectedIndex: @escaping () -> Int?, titles: [String], select: @escaping (Int) -> Void) -> ViewController {
+func exteraChoiceController(context: AccountContext, title: String, selectedIndex: @escaping () -> Int?, titles: [String], select: @escaping (Int) -> Void) -> ViewController {
     let action: (Int, Bool?) -> Void = { index, _ in
         if titles.indices.contains(index) { select(index) }
     }

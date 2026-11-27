@@ -1,4 +1,4 @@
-name: exteraGram iOS Port 0.1.0 - Device archive for later signing
+name: exteraGram iOS Port 0.1.1 - Device archive for later signing
 
 on:
   workflow_dispatch:
@@ -21,8 +21,8 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 330
     env:
-      PORT_VERSION: '0.1.0'
-      PORT_BUILD_NUMBER: '6'
+      PORT_VERSION: '0.1.1'
+      PORT_BUILD_NUMBER: '7'
       IOS_BUNDLE_ID: 'org.exteragram.iosport'
     steps:
       - name: Check out pinned source
@@ -549,11 +549,11 @@ jobs:
           PEM
           openssl x509 -in "$RUNNER_TEMP/artifact-recipient.pem" -noout -fingerprint -sha256 | grep -F '82:4A:0B:19:A1:E8:67:01:08:3B:C8:13:6E:58:8B:50:D5:84:CF:7A:7E:F1:4A:5B:E8:56:32:93:78:27:16:44'
           ipa=bazel-bin/Telegram/Telegram.ipa
-          output="$RUNNER_TEMP/exteragram-0.1.0-iphone.ipa.cms"
+          output="$RUNNER_TEMP/exteragram-0.1.1-iphone.ipa.cms"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$ipa" -out "$output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$output"
           dossier=bazel-bin/Telegram/Telegram_dossier.zip
-          dossier_output="$RUNNER_TEMP/exteragram-0.1.0-signing-dossier.zip.cms"
+          dossier_output="$RUNNER_TEMP/exteragram-0.1.1-signing-dossier.zip.cms"
           test -s "$dossier"
           openssl cms -encrypt -aes256 -binary -outform DER -in "$dossier" -out "$dossier_output" "$RUNNER_TEMP/artifact-recipient.pem"
           test -s "$dossier_output"
@@ -564,10 +564,10 @@ jobs:
         if: ${{ !inputs.swift_preflight_only }}
         uses: actions/upload-artifact@v7
         with:
-          name: exteraGram-iOS-Port-0.1.0-ARM64-private-test
+          name: exteraGram-iOS-Port-0.1.1-ARM64-private-test
           path: |
-            ${{ runner.temp }}/exteragram-0.1.0-iphone.ipa.cms
-            ${{ runner.temp }}/exteragram-0.1.0-signing-dossier.zip.cms
+            ${{ runner.temp }}/exteragram-0.1.1-iphone.ipa.cms
+            ${{ runner.temp }}/exteragram-0.1.1-signing-dossier.zip.cms
             ${{ runner.temp }}/ipa-report.json
             ${{ runner.temp }}/ipa-encrypted.sha256
           if-no-files-found: error
@@ -580,7 +580,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          symbols="$RUNNER_TEMP/exteragram-0.1.0-dsyms.zip"
+          symbols="$RUNNER_TEMP/exteragram-0.1.1-dsyms.zip"
           trap 'rm -f "$symbols"' EXIT
           python3 - "$symbols" <<'PY'
           import json, os, plistlib, re, subprocess, sys, zipfile
@@ -647,8 +647,8 @@ jobs:
         if: ${{ !inputs.swift_preflight_only }}
         uses: actions/upload-artifact@v7
         with:
-          name: exteraGram-iOS-Port-0.1.0-ARM64-symbols-encrypted
-          path: ${{ runner.temp }}/exteragram-0.1.0-dsyms.zip.cms
+          name: exteraGram-iOS-Port-0.1.1-ARM64-symbols-encrypted
+          path: ${{ runner.temp }}/exteragram-0.1.1-dsyms.zip.cms
           if-no-files-found: error
           compression-level: 0
           retention-days: 30

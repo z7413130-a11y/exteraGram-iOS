@@ -8,16 +8,13 @@ import PresentationDataUtils
 import SwiftSignalKit
 import UIKit
 
-private struct SliderRow: ItemListNodeEntry {
+private struct SliderRow: Equatable {
     let section: ItemListSectionId = 0
-    let stableId = 0
     let title: String
     let value: Double
     let limits: ClosedRange<Double>
     let lowerLabel: String
     let upperLabel: String
-
-    static func < (lhs: SliderRow, rhs: SliderRow) -> Bool { lhs.stableId < rhs.stableId }
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let select = arguments as! (Double) -> Void
@@ -30,6 +27,28 @@ private struct SliderRow: ItemListNodeEntry {
                     select(min(self.limits.upperBound, max(self.limits.lowerBound, value.rounded())))
                 })), preferNative: true, accessibilityLabel: self.title),
             color: presentationData.theme.list.itemBlocksBackgroundColor)
+    }
+}
+
+private enum SliderEntry: ItemListNodeEntry {
+    case preview(ExteraLivePreview)
+    case slider(SliderRow)
+
+    var section: ItemListSectionId { 0 }
+    var stableId: Int {
+        switch self {
+        case .preview: return 0
+        case .slider: return 1
+        }
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool { lhs.stableId < rhs.stableId }
+
+    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        switch self {
+        case let .preview(snapshot): return ExteraAppearancePreviewItem(preview: snapshot, presentationData: presentationData)
+        case let .slider(row): return row.item(presentationData: presentationData, arguments: arguments)
+        }
     }
 }
 
@@ -81,7 +100,7 @@ private final class SliderNode: ListViewItemNode {
     }
 }
 
-func exteraSliderController(context: AccountContext, title: String, preference: ExteraPreference<Double>, limits: ClosedRange<Double>, rangeLabels: (String, String)) -> ViewController {
+func exteraSliderController(context: AccountContext, title: String, preference: ExteraPreference<Double>, limits: ClosedRange<Double>, rangeLabels: (String, String), preview: ExteraAppearancePage) -> ViewController {
     let store = ExteraSettingsStore.shared
     let select: (Double) -> Void = { value in
         if store.value(for: preference) != value { store.set(value, for: preference) }
@@ -90,9 +109,14 @@ func exteraSliderController(context: AccountContext, title: String, preference: 
     |> map { presentation, _ -> (ItemListControllerState, (ItemListNodeState, (Double) -> Void)) in
         let data = ItemListPresentationData(presentation)
         let row = SliderRow(title: title, value: store.value(for: preference), limits: limits, lowerLabel: rangeLabels.0, upperLabel: rangeLabels.1)
+        let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
+        var rows: [SliderEntry] = [.slider(row)]
+        if let snapshot = preview.preview(store: store, strings: strings) {
+            rows.insert(.preview(snapshot), at: 0)
+        }
         return (ItemListControllerState(presentationData: data, title: .text(title),
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
-            (ItemListNodeState(presentationData: data, entries: [row], style: .blocks, animateChanges: false), select))
+            (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), select))
     }
     return ItemListController(context: context, state: state)
 }

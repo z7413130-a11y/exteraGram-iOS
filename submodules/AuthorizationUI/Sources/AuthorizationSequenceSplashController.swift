@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AppBundle
 import Display
 import AsyncDisplayKit
 import TelegramCore
@@ -72,6 +73,8 @@ public final class AuthorizationSequenceSplashController: ViewController {
         })
         
         self.controller = RMIntroViewController(backgroundColor: theme.list.plainBackgroundColor, primaryColor: theme.list.itemPrimaryTextColor, buttonColor: theme.intro.startButtonColor, accentColor: theme.list.itemAccentColor, regularDotColor: theme.intro.dotColor, highlightedDotColor: theme.list.itemAccentColor, suggestedLocalizationSignal: localizationSignal)
+        self.controller.brandImage = UIImage(bundleImageName: "ExteraGramPreview")
+        self.controller.brandName = "exteraGram"
         
         // The tour is shown in English (it reads the en bundle); the page indicator's VoiceOver label follows it.
         self.controller.pageAccessibilityLabel = defaultPresentationStrings.VoiceOver_Common_Page
