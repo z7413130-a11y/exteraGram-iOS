@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -3356,6 +3357,20 @@ public final class ChatListNode: ListViewImpl {
         }
     }
     
+    func refreshExteraTextAppearance() {
+        let current = self.currentState.presentationData
+        let store = ExteraSettingsStore.shared
+        guard current.exteraTypography != store.value(for: ExteraPreferences.typography) ||
+              current.exteraSenderMiniAvatars != store.value(for: ExteraPreferences.senderMiniAvatars) else { return }
+        self.updateState { state in
+            var state = state
+            state.presentationData = ChatListPresentationData(theme: current.theme, fontSize: current.fontSize,
+                strings: current.strings, dateTimeFormat: current.dateTimeFormat, nameSortOrder: current.nameSortOrder,
+                nameDisplayOrder: current.nameDisplayOrder, disableAnimations: current.disableAnimations)
+            return state
+        }
+    }
+
     public func updateThemeAndStrings(theme: PresentationTheme, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameSortOrder: PresentationPersonNameOrder, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool) {
         if theme !== self.currentState.presentationData.theme || strings !== self.currentState.presentationData.strings || dateTimeFormat != self.currentState.presentationData.dateTimeFormat {
             self.theme = theme

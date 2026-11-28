@@ -3,6 +3,7 @@ import UIKit
 import AsyncDisplayKit
 import SwiftSignalKit
 import Display
+import ExteraSettings
 import TelegramPresentationData
 
 public final class TabBarItemInfo: NSObject {
@@ -163,6 +164,10 @@ open class TabBarControllerImpl: ViewController, TabBarController {
         if let layout = self.validLayout {
             self.containerLayoutUpdated(layout, transition: .animated(duration: 0.4, curve: .slide))
         }
+    }
+
+    public func configureExteraTabBar(_ appearance: ExteraNavigationAppearance, roles: [ObjectIdentifier: ExteraTab]) {
+        self.tabBarControllerNode.configureExtera(appearance: appearance, roles: roles)
     }
     
     override open func loadDisplayNode() {

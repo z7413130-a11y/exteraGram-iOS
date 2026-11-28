@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -11,6 +12,8 @@ public final class ChatListPresentationData {
     public let nameSortOrder: PresentationPersonNameOrder
     public let nameDisplayOrder: PresentationPersonNameOrder
     public let disableAnimations: Bool
+    let exteraTypography: ExteraTypography
+    let exteraSenderMiniAvatars: Bool
     
     public init(theme: PresentationTheme, fontSize: PresentationFontSize, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameSortOrder: PresentationPersonNameOrder, nameDisplayOrder: PresentationPersonNameOrder, disableAnimations: Bool) {
         self.theme = theme
@@ -20,5 +23,7 @@ public final class ChatListPresentationData {
         self.nameSortOrder = nameSortOrder
         self.nameDisplayOrder = nameDisplayOrder
         self.disableAnimations = disableAnimations
+        self.exteraTypography = ExteraSettingsStore.shared.value(for: ExteraPreferences.typography)
+        self.exteraSenderMiniAvatars = ExteraSettingsStore.shared.value(for: ExteraPreferences.senderMiniAvatars)
     }
 }

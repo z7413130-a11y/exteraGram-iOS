@@ -1488,6 +1488,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     public let titleNode: TextNode
     private var titleBadge: (backgroundView: UIImageView, textNode: TextNode)?
     public let authorNode: AuthorNode
+    private var exteraSenderAvatar: AvatarNode?
     private var compoundHighlightingNode: LinkHighlightingNode?
     private var textArrowNode: ASImageNode?
     private var compoundTextButtonNode: HighlightTrackingButtonNode?
@@ -2457,9 +2458,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         let currentCustomTextEntities = self.cachedCustomTextEntities
         
         return { [weak self] item, params, first, last, firstWithHeader, nextIsPinned, nextHasActiveRevealControls in
-            let titleFont = Font.semibold(floor(item.presentationData.fontSize.itemListBaseFontSize * 16.0 / 17.0))
-            let textFont = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0))
-            let italicTextFont = Font.italic(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0))
+            let typography = item.presentationData.exteraTypography
+            let titleFont = typography.font(Font.semibold(floor(item.presentationData.fontSize.itemListBaseFontSize * 16.0 / 17.0)), weight: .semibold)
+            let textFont = typography.font(Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0)), weight: .regular)
+            let italicTextFont = typography.font(Font.italic(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0)), weight: .regular, italic: true)
             let dateFont = Font.regular(floor(item.presentationData.fontSize.itemListBaseFontSize * 14.0 / 17.0))
             let badgeFont = Font.with(size: floor(item.presentationData.fontSize.itemListBaseFontSize * 12.0 / 17.0), design: .regular, weight: .semibold, traits: [.monospacedNumbers])
             let avatarBadgeFont = Font.with(size: floor(item.presentationData.fontSize.itemListBaseFontSize * 16.0 / 17.0), design: .regular, weight: .regular, traits: [.monospacedNumbers])
@@ -4013,7 +4015,20 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 authorTopicArrowColor = theme.messageTextColor
             }
 
-            let (authorLayout, authorApply) = authorLayout(item.context, rawContentWidth - badgeSize, item.presentationData.theme, effectiveAuthorTitle, forumThreads, authorTopicArrowColor)
+            let sender: EnginePeer?
+            if item.presentationData.exteraSenderMiniAvatars,
+               effectiveAuthorTitle != nil, !hasDraft, !isSearching, inputActivities?.isEmpty != false,
+               rawContentWidth - badgeSize >= 70, case let .chat(chatPeer) = contentPeer,
+               let peer = chatPeer.chatMainPeer, let author = messages.last?.author, peer.id != author.id {
+                switch peer {
+                case .legacyGroup, .channel: sender = author
+                default: sender = nil
+                }
+            } else {
+                sender = nil
+            }
+            let senderAvatarInset: CGFloat = sender == nil ? 0 : 18
+            let (authorLayout, authorApply) = authorLayout(item.context, rawContentWidth - badgeSize - senderAvatarInset, item.presentationData.theme, effectiveAuthorTitle, forumThreads, authorTopicArrowColor)
             
             var textBottomRightCutout: CGFloat = 0.0
             
@@ -4043,7 +4058,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             
             let textLineSpacing: CGFloat = min(0.2, item.presentationData.fontSize.itemListBaseFontSize * 0.2 / 17.0)
             let (textLayout, textApply) = textLayout(TextNodeLayoutArguments(
-                attributedString: textAttributedString,
+                attributedString: textAttributedString.map { typography.emojiStyle.applying(to: $0, keepingAttribute: ChatTextInputAttributes.customEmoji) },
                 backgroundColor: nil,
                 maximumNumberOfLines: (authorAttributedString == nil && itemTags.isEmpty && forumThread == nil && topForumTopicItems.isEmpty) ? 2 : 1,
                 truncationType: .end,
@@ -4084,7 +4099,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 titleRectWidth = max(10.0, titleRectWidth - titleBadgeLayoutAndApplyValue.0.size.width - 8.0)
             }
             
-            let (titleLayout, titleApply) = titleLayout(TextNodeLayoutArguments(attributedString: titleAttributedString, backgroundColor: nil, maximumNumberOfLines: maxTitleLines, truncationType: .end, constrainedSize: CGSize(width: titleRectWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: titleCutout, insets: UIEdgeInsets()))
+            let (titleLayout, titleApply) = titleLayout(TextNodeLayoutArguments(attributedString: titleAttributedString.map { typography.emojiStyle.applying(to: $0) }, backgroundColor: nil, maximumNumberOfLines: maxTitleLines, truncationType: .end, constrainedSize: CGSize(width: titleRectWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: titleCutout, insets: UIEdgeInsets()))
         
             var inputActivitiesSize: CGSize?
             var inputActivitiesApply: (() -> Void)?
@@ -5001,8 +5016,25 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     let titleFrame = CGRect(origin: CGPoint(x: contentRect.origin.x + titleOffset, y: contentRect.origin.y + UIScreenPixel), size: titleLayout.size)
                     strongSelf.titleNode.frame = titleFrame
                     
-                    let authorNodeFrame = CGRect(origin: CGPoint(x: contentRect.origin.x - 1.0, y: contentRect.minY + titleLayout.size.height - 2.0), size: authorLayout)
+                    let authorNodeFrame = CGRect(origin: CGPoint(x: contentRect.origin.x - 1.0 + senderAvatarInset, y: contentRect.minY + titleLayout.size.height - 2.0), size: authorLayout)
                     strongSelf.authorNode.frame = authorNodeFrame
+                    if let sender, authorNodeFrame.height >= 14 {
+                        let avatar = strongSelf.exteraSenderAvatar ?? AvatarNode(font: avatarPlaceholderFont(size: 7))
+                        let size = CGSize(width: 14, height: 14)
+                        if strongSelf.exteraSenderAvatar == nil {
+                            strongSelf.exteraSenderAvatar = avatar
+                            avatar.isUserInteractionEnabled = false
+                            avatar.isAccessibilityElement = false
+                            strongSelf.mainContentContainerNode.addSubnode(avatar)
+                        }
+                        avatar.setPeer(context: item.context, theme: item.presentationData.theme, peer: sender,
+                            emptyColor: item.presentationData.theme.list.mediaPlaceholderColor, displayDimensions: size)
+                        avatar.frame = CGRect(origin: CGPoint(x: contentRect.minX, y: floor(authorNodeFrame.midY - size.height / 2)), size: size)
+                        avatar.updateSize(size: size)
+                    } else if let avatar = strongSelf.exteraSenderAvatar {
+                        avatar.removeFromSupernode()
+                        strongSelf.exteraSenderAvatar = nil
+                    }
                     let textNodeFrame = CGRect(origin: CGPoint(x: contentRect.origin.x - 1.0, y: contentRect.minY + titleLayout.size.height - 2.0 + (authorLayout.height.isZero ? 0.0 : (authorLayout.height - 3.0))), size: textLayout.size)
                     
                     if let topForumTopicRect, !isSearching {

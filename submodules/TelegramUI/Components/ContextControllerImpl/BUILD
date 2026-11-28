@@ -19,6 +19,7 @@ swift_library(
         "//submodules/ComponentFlow",
         "//submodules/ContextUI",
         "//submodules/Display",
+        "//submodules/ExteraSettings",
         "//submodules/TelegramUI/Components/EmojiStatusComponent",
         "//submodules/TelegramUI/Components/EntityKeyboard",
         "//submodules/TelegramUI/Components/GlassBackgroundComponent",

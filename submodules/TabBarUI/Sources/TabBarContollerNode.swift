@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -175,6 +176,17 @@ final class TabBarControllerNode: ASDisplayNode {
         transition.updateAlpha(node: self.disabledOverlayNode, alpha: value ? 0.0 : 1.0)
     }
     
+    private var exteraAppearance: ExteraNavigationAppearance?
+    private var exteraRoles: [ObjectIdentifier: ExteraTab] = [:]
+
+    func configureExtera(appearance: ExteraNavigationAppearance, roles: [ObjectIdentifier: ExteraTab]) {
+        guard self.exteraAppearance != appearance || self.exteraRoles != roles else { return }
+        self.exteraAppearance = appearance
+        self.exteraRoles = roles
+        self.requestUpdate()
+    }
+    private var exteraMaterialView: ExteraMaterialView?
+
     var tabBarHidden = false {
         didSet {
             if self.tabBarHidden != oldValue {
@@ -214,7 +226,8 @@ final class TabBarControllerNode: ASDisplayNode {
         panelsBottomInset = tabBarFloatingBottomInset(bottomInset: panelsBottomInset)
 
         let sidePlacement = self.sidePlacement(for: params.layout)
-        let isCompact = tabBarIsCompact(layout: params.layout, sidePlacement: sidePlacement)
+        let isCompact = tabBarIsCompact(layout: params.layout, sidePlacement: sidePlacement) || self.exteraAppearance?.hidesLabels == true
+        let style = sidePlacement == nil ? self.exteraAppearance?.interface.barStyle ?? .telegram : .telegram
         // Where iOS 27 would switch its tab bar to the wide variant (a vertically compact phone, the bar at least
         // 568pt wide), the bar keeps its own horizontal layout; elsewhere a horizontal bar takes iOS 27's portrait one.
         let isWide = params.layout.size.width > params.layout.size.height && params.layout.size.width >= 568.0
@@ -232,8 +245,8 @@ final class TabBarControllerNode: ASDisplayNode {
             sideInset = 20.0
         }
 
-        let tabBarBottomInset: CGFloat
-        let tabBarSideInset: CGFloat
+        var tabBarBottomInset: CGFloat
+        var tabBarSideInset: CGFloat
         if isSystemLayout {
             // iOS 27 floats the bar at least 21pt above the bottom edge and from the sides (`minimumPlatterInsets`),
             // and higher by as much as the safe area reaches past the home affordance's 21pt allowance in a 34pt
@@ -243,6 +256,10 @@ final class TabBarControllerNode: ASDisplayNode {
         } else {
             tabBarBottomInset = max(panelsBottomInset, keyboardBottomInset)
             tabBarSideInset = sideInset
+        }
+        if style == .floating {
+            tabBarBottomInset += max(0, 10 - keyboardBottomInset)
+            tabBarSideInset = min(36, max(tabBarSideInset, 28))
         }
 
         let previousAppliedPlacement = self.tabBarView.view == nil ? nil : self.appliedPlacement
@@ -273,7 +290,23 @@ final class TabBarControllerNode: ASDisplayNode {
         var tabBarTransition = ComponentTransition(transition)
         if self.isChangingSelectedIndex {
             self.isChangingSelectedIndex = false
-            tabBarTransition = .spring(duration: 0.4)
+            if let motion = self.exteraAppearance?.motion.forTarget(.tabs) {
+                let duration = motion.duration(0.4)
+                if !motion.allowsMotion {
+                    tabBarTransition = .immediate
+                } else {
+                    switch motion.style {
+                    case .telegram: tabBarTransition = .spring(duration: duration)
+                    case .spring: tabBarTransition = ComponentTransition(animation: .curve(duration: duration, curve: .custom(0.2, 0.90 + Float(motion.springStrength) / 400, 0.29, 1.0)))
+                    case .smooth: tabBarTransition = .easeInOut(duration: duration)
+                    case .system: tabBarTransition = ComponentTransition(animation: .curve(duration: duration, curve: .slide))
+                    case .scale: tabBarTransition = .easeInOut(duration: duration * 0.65)
+                    case .minimal: tabBarTransition = .immediate
+                    }
+                }
+            } else {
+                tabBarTransition = .spring(duration: 0.4)
+            }
         }
         if self.tabBarView.view == nil {
             tabBarTransition = .immediate
@@ -290,6 +323,7 @@ final class TabBarControllerNode: ASDisplayNode {
                     
                     return TabBarComponent.Item(
                         content: .tabBarItem(item.item),
+                        imageOverride: self.exteraRoles[ObjectIdentifier(item.item)].flatMap { role in self.exteraAppearance?.iconPack.image(role) },
                         action: { [weak self] isLongTap in
                             guard let self else {
                                 return
@@ -337,7 +371,8 @@ final class TabBarControllerNode: ASDisplayNode {
                 outerInsets: UIEdgeInsets(top: 0.0, left: tabBarSideInset, bottom: tabBarBottomInset, right: tabBarSideInset),
                 axis: sidePlacement == nil ? .horizontal : .vertical,
                 isCompact: isCompact,
-                usesSystemLayout: !isWide
+                usesSystemLayout: !isWide,
+                horizontalCornerRadius: style == .telegram ? nil : self.exteraAppearance.map { CGFloat($0.interface.barRadius) }
             )),
             environment: {},
             containerSize: sidePlacement?.frame.size ?? CGSize(width: params.layout.size.width - tabBarSideInset * 2.0, height: 100.0)
@@ -361,6 +396,23 @@ final class TabBarControllerNode: ASDisplayNode {
                 self.view.addSubview(tabBarComponentView)
             }
             let tabBarAlpha: CGFloat = params.toolbar == nil ? 1.0 : 0.0
+            if style == .glass, let appearance = self.exteraAppearance, !self.tabBarHidden, keyboardBottomInset == 0,
+               let region = (tabBarComponentView as? TabBarComponent.View)?.tabRegionFrame, !region.isEmpty {
+                let materialFrame = region.offsetBy(dx: tabBarFrame.minX, dy: tabBarFrame.minY)
+                let material = self.exteraMaterialView ?? ExteraMaterialView(frame: .zero)
+                if material.superview == nil {
+                    self.exteraMaterialView = material
+                    self.view.insertSubview(material, belowSubview: tabBarComponentView)
+                }
+                material.update(style: .liquidGlass, fill: self.theme.rootController.tabBar.backgroundColor,
+                    tint: self.theme.rootController.tabBar.selectedIconColor, dark: self.theme.overallDarkAppearance,
+                    radius: min(CGFloat(appearance.interface.barRadius), materialFrame.height / 2))
+                tabBarFrameTransition.updateFrame(view: material, frame: materialFrame)
+                transition.updateAlpha(layer: material.layer, alpha: tabBarAlpha)
+            } else {
+                self.exteraMaterialView?.removeFromSuperview()
+                self.exteraMaterialView = nil
+            }
             if let crossfadeDuration, let previousAppliedPlacement, let previousPlacement = previousAppliedPlacement.placement {
                 if !previousAppliedPlacement.isHidden && tabBarComponentView.alpha > 0.0, let snapshotView = tabBarComponentView.snapshotView(afterScreenUpdates: false) {
                     snapshotView.frame = previousPlacement.movedFrame(from: previousAppliedPlacement.containerSize, to: params.layout.size)

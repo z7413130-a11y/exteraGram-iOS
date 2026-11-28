@@ -83,7 +83,7 @@ func exteraAppIconsController(context: AccountContext) -> ViewController {
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
     }
-    let result = ItemListController(context: context, state: state)
+    let result = ExteraSettingsListController(context: context, state: state)
     controller = result
     return result
 }

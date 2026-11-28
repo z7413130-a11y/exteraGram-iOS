@@ -98,6 +98,7 @@ final class NavigationTransitionCoordinator {
 
     /// The expand style's renderer; nil: the slide.
     private let expansion: NavigationExpansionRenderer?
+    private let slideSpring: NavigationTransitionSpring?
     var isExpansion: Bool {
         return self.expansion != nil
     }
@@ -130,8 +131,9 @@ final class NavigationTransitionCoordinator {
         return self.transition == .Push ? progress : 1.0 - progress
     }
     
-    init(transition: NavigationTransition, isInteractive: Bool, isFlat: Bool, container: NavigationContainer, topNode: ASDisplayNode, topNavigationBar: NavigationBar?, topTransitionSource: NavigationBarTransitionSource?, bottomNode: ASDisplayNode, bottomNavigationBar: NavigationBar?, bottomTransitionSource: NavigationBarTransitionSource?, screenCornerRadii: CornerRadii, didUpdateProgress: ((CGFloat, ContainedViewLayoutTransition, CGRect, CGRect) -> Void)? = nil, didStartProgressAnimation: ((NavigationTransitionTimeline) -> Void)? = nil, style: NavigationTransitionStyle = .slide) {
+    init(transition: NavigationTransition, isInteractive: Bool, isFlat: Bool, container: NavigationContainer, topNode: ASDisplayNode, topNavigationBar: NavigationBar?, topTransitionSource: NavigationBarTransitionSource?, bottomNode: ASDisplayNode, bottomNavigationBar: NavigationBar?, bottomTransitionSource: NavigationBarTransitionSource?, screenCornerRadii: CornerRadii, didUpdateProgress: ((CGFloat, ContainedViewLayoutTransition, CGRect, CGRect) -> Void)? = nil, didStartProgressAnimation: ((NavigationTransitionTimeline) -> Void)? = nil, style: NavigationTransitionStyle = .slide, slideSpring: NavigationTransitionSpring? = nil) {
         self.transition = transition
+        self.slideSpring = slideSpring
         if case let .expand(renderer) = style {
             self.expansion = renderer
         } else {
@@ -445,7 +447,7 @@ final class NavigationTransitionCoordinator {
             self.navigationBarTransitionLayer?.endInteraction(towardTop: self.transition == .Pop)
         }
         
-        self.releaseProgress(to: 0.0, spring: spring, velocity: velocity, completion: { [weak self] in
+        self.releaseProgress(to: 0.0, spring: self.expansion == nil ? self.slideSpring ?? spring : spring, velocity: velocity, completion: { [weak self] in
             guard let strongSelf = self else {
                 return
             }
@@ -848,7 +850,7 @@ final class NavigationTransitionCoordinator {
                 spring = self.transition == .Push ? expansion.openSpring : expansion.closeSpring
                 rest = .expansion
             } else {
-                spring = .noninteractive
+                spring = self.slideSpring ?? .noninteractive
                 rest = .progress
             }
             self.runProgressCurve(NavigationSpringCurve(from: self.progress, target: 1.0, spring: spring, overshoots: true, rest: rest), continuing: false, completion: {
@@ -858,7 +860,7 @@ final class NavigationTransitionCoordinator {
             // A released swipe: UIKit's interactive spring, starting at the finger's velocity (points per second here,
             // progress per second for the spring).
             self.navigationBarTransitionLayer?.endInteraction(towardTop: self.transition == .Push)
-            self.releaseProgress(to: 1.0, spring: .interactive, velocity: velocity / max(1.0, self.container.bounds.size.width), completion: {
+            self.releaseProgress(to: 1.0, spring: self.expansion == nil ? self.slideSpring ?? .interactive : .interactive, velocity: velocity / max(1.0, self.container.bounds.size.width), completion: {
                 f()
             })
         }
@@ -897,7 +899,7 @@ final class NavigationTransitionCoordinator {
         if let expansion = self.expansion {
             curve = NavigationSpringCurve(from: value, velocity: velocity, target: 0.0, spring: expansion.closeSpring, overshoots: true, rest: .expansion)
         } else {
-            curve = NavigationSpringCurve(from: value, velocity: velocity, target: 0.0, spring: .noninteractive, overshoots: false, rest: .progress)
+            curve = NavigationSpringCurve(from: value, velocity: velocity, target: 0.0, spring: self.slideSpring ?? .noninteractive, overshoots: false, rest: .progress)
         }
         self.runProgressCurve(curve, continuing: true, completion: { [weak self] in
             guard let self else {

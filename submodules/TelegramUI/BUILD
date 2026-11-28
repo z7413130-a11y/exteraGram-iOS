@@ -68,6 +68,7 @@ swift_library(
         "//submodules/ExteraDraftTranslation",
         "//submodules/ExteraMessageDetailsUI",
         "//submodules/ExteraSettings",
+        "//submodules/ExteraSettingsUI",
         "//submodules/CrashReporting:CrashReporting",
         "//third-party/recaptcha:RecaptchaEnterprise",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",

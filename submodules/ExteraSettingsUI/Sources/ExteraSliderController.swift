@@ -118,5 +118,5 @@ func exteraSliderController(context: AccountContext, title: String, preference: 
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), select))
     }
-    return ItemListController(context: context, state: state)
+    return ExteraSettingsListController(context: context, state: state)
 }

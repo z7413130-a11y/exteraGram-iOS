@@ -518,6 +518,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         
         self.exteraAppearanceDisposable = (ExteraSettingsStore.shared.changes |> deliverOnMainQueue).start(next: { [weak self] _ in
             guard let self, self.isNodeLoaded else { return }
+            let list = self.chatListDisplayNode
+            list.mainContainerNode.refreshExteraTextAppearance()
+            if list.effectiveContainerNode !== list.mainContainerNode {
+                list.effectiveContainerNode.refreshExteraTextAppearance()
+            }
             self.requestLayout(transition: .immediate)
         })
 

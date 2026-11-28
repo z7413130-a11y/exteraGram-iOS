@@ -1,6 +1,8 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
+import ExteraSettings
+import ExteraSettingsUI
 import ContextUI
 import AccountContext
 import TelegramCore
@@ -136,6 +138,16 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
                     }
 
                     var items: [ContextMenuItem] = []
+                    if case .chatList = source, peerId.namespace != Namespaces.Peer.SecretChat,
+                       chatListController != nil {
+                        let exteraStrings = ExteraStrings(languageCode: strings.baseLanguageCode)
+                        items.append(.action(ContextMenuActionItem(text: exteraStrings.text("Local chat theme", "Локальная тема чата"), icon: { theme in
+                            UIImage(systemName: "paintpalette")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
+                        }, action: { [weak chatListController] _, dismiss in
+                            dismiss(.default)
+                            chatListController?.push(exteraChatThemesController(context: context, peerId: peerId.toInt64()))
+                        })))
+                    }
 
                     if case let .search(search) = source {
                         switch search {

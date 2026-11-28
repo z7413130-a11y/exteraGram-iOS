@@ -1,4 +1,5 @@
 import Foundation
+import ExteraSettings
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -1480,6 +1481,7 @@ public final class ContextControllerActionsStackNodeImpl: ASDisplayNode, Context
     final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelegate {
         let backgroundContainer: GlassBackgroundContainerView
         let contentContainer: LensTransitionContainer
+        private var exteraSurface: ExteraMenuSurface?
         
         var requestUpdate: ((ContainedViewLayoutTransition) -> Void)?
         var requestPop: (() -> Void)?
@@ -1575,9 +1577,30 @@ public final class ContextControllerActionsStackNodeImpl: ASDisplayNode, Context
             
             transition.setPosition(view: self.contentContainer, position: CGRect(origin: CGPoint(), size: size).center)
             transition.setBounds(view: self.contentContainer, bounds: CGRect(origin: CGPoint(), size: size))
-            self.backgroundContainer.nativeBlurRadius = glassBlurRadius
-            self.contentContainer.nativeBlurRadius = glassBlurRadius
-            self.contentContainer.update(size: size, cornerRadius: min(30.0, size.height * 0.5), isDark: presentationData.theme.overallDarkAppearance, tintColor: GlassBackgroundView.TintColor(kind: usesClearGlass ? .custom(style: .clear, color: .clear) : .panel), transition: transition)
+            let store = ExteraSettingsStore.shared
+            let style = store.value(for: ExteraPreferences.menuAppearance).resolved(for: store.value(for: ExteraPreferences.interfaceStyle))
+            let custom = style.material != .telegram
+            let dark = presentationData.theme.overallDarkAppearance
+            let nativeRadius: CGFloat? = custom ? 0 : glassBlurRadius
+            self.backgroundContainer.nativeBlurRadius = nativeRadius
+            self.contentContainer.nativeBlurRadius = nativeRadius
+            self.contentContainer.update(size: size, cornerRadius: min(custom ? CGFloat(style.radius) : 30, size.height * 0.5),
+                isDark: dark, tintColor: GlassBackgroundView.TintColor(kind: usesClearGlass || custom ? .custom(style: .clear, color: .clear) : .panel),
+                transition: transition)
+            if custom {
+                let surface = self.exteraSurface ?? ExteraMenuSurface(frame: .zero)
+                if surface.superview == nil {
+                    self.exteraSurface = surface
+                    self.contentContainer.contentsView.insertSubview(surface, at: 0)
+                }
+                let outline = ExteraMenuOutline(rawValue: store.value(for: ExteraPreferences.glassOutlineStyle)) ?? .standard
+                surface.configure(style, outline: outline, base: presentationData.theme.contextMenu.backgroundColor,
+                    accent: presentationData.theme.list.itemAccentColor, dark: dark)
+                transition.setFrame(view: surface, frame: CGRect(origin: .zero, size: size))
+            } else {
+                self.exteraSurface?.removeFromSuperview()
+                self.exteraSurface = nil
+            }
         }
     }
     

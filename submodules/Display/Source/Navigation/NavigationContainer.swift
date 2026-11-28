@@ -343,7 +343,7 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
             if let bottomController {
                 self.scheduleSwipeStatusBarStyle(timeline: timeline, top: topController, beneath: bottomController)
             }
-        }, style: style)
+        }, style: style, slideSpring: topController.navigationSlideSpring(for: .interactivePop))
         bottomController.displayNode.recursivelyEnsureDisplaySynchronously(true)
         let transition = TopTransition(type: .pop, previous: Child(value: bottomController, layout: layout), destination: self.state.top ?? Child(value: topController, layout: layout), coordinator: navigationTransitionCoordinator)
         self.state.transition = transition
@@ -864,7 +864,7 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
                 if transitionType == .push, let currentTransition = self.state.transition, currentTransition.type == .push, currentTransition.coordinator.isInteractive, !currentTransition.coordinator.isExpansion {
                     self.scheduleSwipeStatusBarStyle(timeline: timeline, top: currentTransition.destination.value, beneath: currentTransition.previous.value)
                 }
-            }, style: style))
+            }, style: style, slideSpring: topController.navigationSlideSpring(for: transitionType == .push ? .push : .pop)))
             self.transitionKeyboardLeftEdge = keyboardLeftEdge
             if transitionType == .push {
                 topTransition.coordinator.backTapped = { [weak topController] in

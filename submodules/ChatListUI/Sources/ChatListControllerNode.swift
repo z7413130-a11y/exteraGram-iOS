@@ -131,6 +131,12 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
     }
     
     private var currentItemNodeValue: ChatListContainerItemNode?
+
+    func refreshExteraTextAppearance() {
+        for item in self.itemNodes.values { item.listNode.refreshExteraTextAppearance() }
+        self.pendingItemNode?.1.listNode.refreshExteraTextAppearance()
+    }
+
     public var currentItemNode: ChatListNode {
         return self.currentItemNodeValue!.listNode
     }
@@ -1581,6 +1587,8 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                             self.controller?.push(self.context.sharedContext.makeProxySettingsController(context: self.context))
                         case .memory:
                             self.effectiveContainerNode.currentItemNode.interaction?.openStorageManagement()
+                        case .weather, .btc, .gram, .currency, .custom, .custom2, .custom3:
+                            break
                         }
                     })
                 let panel = HeaderPanelContainerComponent.Panel(key: "exteraPills", orderIndex: 10,

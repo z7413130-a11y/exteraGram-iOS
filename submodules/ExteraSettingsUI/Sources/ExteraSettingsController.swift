@@ -34,6 +34,14 @@ private extension ExteraSettingsCategory {
     }
 }
 
+final class ExteraSettingsListController: ItemListController {
+    override func navigationSlideSpring(for operation: NavigationExpansionOperation) -> NavigationTransitionSpring? {
+        let motion = ExteraMotion()
+        guard let timing = motion.slideTiming(for: operation == .push ? .settings : .back, interactive: operation == .interactivePop) else { return nil }
+        return NavigationTransitionSpring(duration: timing.duration, bounce: timing.bounce)
+    }
+}
+
 struct SettingsRow: ItemListNodeEntry {
     enum Kind: Equatable {
         case brand(String)
@@ -52,6 +60,7 @@ struct SettingsRow: ItemListNodeEntry {
     let section: ItemListSectionId
     let title: String
     let kind: Kind
+    let interfaceStyle = ExteraSettingsStore.shared.value(for: ExteraPreferences.interfaceStyle)
 
     static func < (lhs: SettingsRow, rhs: SettingsRow) -> Bool {
         return lhs.stableId < rhs.stableId
@@ -59,43 +68,44 @@ struct SettingsRow: ItemListNodeEntry {
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let action = arguments as! (Int, Bool?) -> Void
+        let style: ItemListSystemStyle = self.interfaceStyle == .classic ? .legacy : .glass
         switch self.kind {
         case let .preview(preview):
             return ExteraAppearancePreviewItem(preview: preview, presentationData: presentationData)
         case let .appIcon(imageName, selected):
             return ItemListCheckboxItem(
-                presentationData: presentationData, systemStyle: .glass,
+                presentationData: presentationData, systemStyle: style,
                 icon: generateScaledImage(image: UIImage(bundleImageName: imageName), size: CGSize(width: 30, height: 30), opaque: false),
                 title: self.title, style: .right, checked: selected, zeroSeparatorInsets: false,
                 maximumNumberOfLines: 0, sectionId: self.section, action: { action(self.stableId, nil) }
             )
         case let .link(page):
             return ItemListDisclosureItem(
-                presentationData: presentationData, systemStyle: .glass, icon: page.icon,
+                presentationData: presentationData, systemStyle: style, icon: page.icon,
                 title: self.title, label: "", sectionId: self.section, style: .blocks,
                 action: { action(self.stableId, nil) }
             )
         case let .brand(version):
             return ItemListDisclosureItem(
-                presentationData: presentationData, systemStyle: .glass, icon: exteraMenuIcon,
+                presentationData: presentationData, systemStyle: style, icon: exteraMenuIcon,
                 title: self.title, titleFont: .bold, label: version, labelStyle: .multilineDetailText,
                 sectionId: self.section, style: .blocks, disclosureStyle: .none, action: nil
             )
         case let .category(category):
             return ItemListDisclosureItem(
-                presentationData: presentationData, systemStyle: .glass, icon: category.icon,
+                presentationData: presentationData, systemStyle: style, icon: category.icon,
                 title: self.title, label: "", sectionId: self.section, style: .blocks,
                 action: { action(self.stableId, nil) }
             )
         case let .toggle(value):
             return ItemListSwitchItem(
-                presentationData: presentationData, systemStyle: .glass, title: self.title,
+                presentationData: presentationData, systemStyle: style, title: self.title,
                 value: value, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks,
                 updated: { action(self.stableId, $0) }
             )
         case let .disclosure(label):
             return ItemListDisclosureItem(
-                presentationData: presentationData, systemStyle: .glass, title: self.title,
+                presentationData: presentationData, systemStyle: style, title: self.title,
                 attributedTitle: NSAttributedString(string: self.title, attributes: [
                     .font: Font.regular(presentationData.fontSize.itemListBaseFontSize),
                     .foregroundColor: presentationData.theme.list.itemPrimaryTextColor,
@@ -106,13 +116,13 @@ struct SettingsRow: ItemListNodeEntry {
             )
         case let .language(selected):
             return ItemListCheckboxItem(
-                presentationData: presentationData, systemStyle: .glass, title: self.title,
+                presentationData: presentationData, systemStyle: style, title: self.title,
                 style: .right, checked: selected, zeroSeparatorInsets: false, maximumNumberOfLines: 0,
                 sectionId: self.section, action: { action(self.stableId, nil) }
             )
         case .action:
             return ItemListActionItem(
-                presentationData: presentationData, systemStyle: .glass, title: self.title,
+                presentationData: presentationData, systemStyle: style, title: self.title,
                 kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks,
                 action: { action(self.stableId, nil) }
             )
@@ -127,12 +137,14 @@ private enum RowID: Int {
     case stories, callsTab, premium, animatedEmoji, avatarCorners, stickerSize, tail, edited, search, centerTitle, dividers, privateReactions, channelReactions, groupReactions
     case details, hideShare, confirmSticker, confirmGif, confirmCall, hideVideoRecording, showUserId, doubleTapIncoming, doubleTapOutgoing, swipe, plugins, about
     case uniformAvatar, gooeyAvatar, forceSnow, headerStatus, headerTitle, folderIcons, folderCounters, stickerShape, stickerTime
-    case hiddenAllChats, composeInMenu, compactCompose
+    case hiddenAllChats, composeInMenu, compactCompose, senderAvatars
     case hideNews, tabOrder, headerBlur
+    case interfaceControls
 }
 
 private func appearanceToggle(_ id: RowID, _ strings: ExteraStrings) -> (String, ExteraPreference<Bool>)? {
     switch id {
+    case .senderAvatars: return (strings.text("Mini sender avatars", "Мини-аватарки отправителей"), ExteraPreferences.senderMiniAvatars)
     case .stories: return (strings.text("Hide chat list stories", "Скрыть истории в списке чатов"), ExteraPreferences.hideStories)
     case .callsTab: return (strings.text("Hide the Calls tab", "Скрыть вкладку «Звонки»"), ExteraPreferences.hideCallsTab)
     case .premium: return (strings.text("Hide Premium badges in chats", "Скрыть значки Premium в чатах"), ExteraPreferences.hidePremiumBadges)
@@ -191,8 +203,8 @@ public func exteraSettingsController(context: AccountContext) -> ViewController 
         settingsController?.push(exteraCategoryController(context: context, category: category))
     }
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-    let state = context.sharedContext.presentationData
-    |> map { presentation -> (ItemListControllerState, (ItemListNodeState, (Int, Bool?) -> Void)) in
+    let state = combineLatest(context.sharedContext.presentationData, ExteraSettingsStore.shared.changes)
+    |> map { presentation, _ -> (ItemListControllerState, (ItemListNodeState, (Int, Bool?) -> Void)) in
         let strings = ExteraStrings(languageCode: presentation.strings.baseLanguageCode)
         let data = ItemListPresentationData(presentation)
         let rows = [
@@ -205,7 +217,7 @@ public func exteraSettingsController(context: AccountContext) -> ViewController 
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
     }
-    let controller = ItemListController(context: context, state: state)
+    let controller = ExteraSettingsListController(context: context, state: state)
     settingsController = controller
     return controller
 }
@@ -219,6 +231,13 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
             switch page {
             case .appIcons: controller = exteraAppIconsController(context: context)
             case .pills: controller = exteraPillSettingsController(context: context)
+            case .menuMaterials: controller = exteraMenuController(context: context)
+            case .typography: controller = exteraTypographyController(context: context)
+            case .motion: controller = exteraMotionController(context: context)
+            case .icons: controller = exteraIconPacksController(context: context)
+            case .chatThemes: controller = exteraChatThemesController(context: context)
+            case .style: controller = exteraStylesController(context: context)
+            case .geometry: controller = exteraGeometryController(context: context)
             default: controller = exteraCategoryController(context: context, category: .appearance, appearancePage: page)
             }
             settingsController?.push(controller)
@@ -281,6 +300,8 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
             settingsController?.push(exteraSwipeController(context: context))
         case .tabOrder:
             settingsController?.push(exteraTabOrderController(context: context))
+        case .interfaceControls:
+            settingsController?.push(exteraInterfaceController(context: context))
         case .translation:
             if let value { store.set(value, for: ExteraPreferences.translateDrafts) }
         case .targetLanguage:
@@ -328,12 +349,12 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                 let appearanceRows: [RowID]
                 switch appearancePage {
                 case .avatars: appearanceRows = [.avatarCorners, .uniformAvatar, .gooeyAvatar]
-                case .chatList: appearanceRows = [.stories, .search, .dividers, .forceSnow]
+                case .chatList: appearanceRows = [.stories, .search, .dividers, .forceSnow, .senderAvatars]
                 case .header: appearanceRows = [.centerTitle, .headerStatus, .headerTitle, .composeInMenu, .compactCompose, .headerBlur]
                 case .folders: appearanceRows = [.folderIcons, .folderCounters, .hiddenAllChats]
-                case .navigation: appearanceRows = [.callsTab, .hideNews, .tabOrder]
+                case .navigation: appearanceRows = [.callsTab, .hideNews, .tabOrder, .interfaceControls]
                 case .messages: appearanceRows = [.premium, .animatedEmoji, .stickerSize, .tail, .edited, .privateReactions, .channelReactions, .groupReactions, .stickerShape, .stickerTime]
-                case .appIcons, .pills: appearanceRows = []
+                case .appIcons, .pills, .menuMaterials, .typography, .motion, .icons, .chatThemes, .style, .geometry: appearanceRows = []
                 }
                 let preview = appearancePage.preview(store: store, strings: strings).map {
                     SettingsRow(stableId: -1, section: 0, title: "", kind: .preview($0))
@@ -366,6 +387,8 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
                         return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
                     case .tabOrder:
                         return row(id, .appearance, strings.text("Tab order", "Порядок вкладок"), .disclosure(""))
+                    case .interfaceControls:
+                        return row(id, .appearance, strings.text("Bars and side menu", "Панели и боковое меню"), .disclosure(""))
                     case .headerBlur:
                         let value = ExteraHeaderBlur(rawValue: store.value(for: ExteraPreferences.headerBlurStyle)) ?? .standard
                         return row(id, .appearance, appearanceChoiceTitle(id, strings), .disclosure(value.title(strings)))
@@ -408,7 +431,7 @@ private func exteraCategoryController(context: AccountContext, category: ExteraS
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action)
         )
     }
-    let controller = ItemListController(context: context, state: state)
+    let controller = ExteraSettingsListController(context: context, state: state)
     settingsController = controller
     return controller
 }
@@ -461,7 +484,7 @@ private func exteraAboutController(context: AccountContext) -> ViewController {
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), openRepository))
     }
-    return ItemListController(context: context, state: state)
+    return ExteraSettingsListController(context: context, state: state)
 }
 
 private func exteraLanguageController(context: AccountContext) -> ViewController {
@@ -485,10 +508,10 @@ private func exteraLanguageController(context: AccountContext) -> ViewController
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action)
         )
     }
-    return ItemListController(context: context, state: state)
+    return ExteraSettingsListController(context: context, state: state)
 }
 
-func exteraChoiceController(context: AccountContext, title: String, selectedIndex: @escaping () -> Int?, titles: [String], select: @escaping (Int) -> Void) -> ViewController {
+func exteraChoiceController(context: AccountContext, title: String, selectedIndex: @escaping () -> Int?, titles: [String], preview: (() -> ExteraLivePreview)? = nil, select: @escaping (Int) -> Void) -> ViewController {
     let action: (Int, Bool?) -> Void = { index, _ in
         if titles.indices.contains(index) { select(index) }
     }
@@ -496,14 +519,17 @@ func exteraChoiceController(context: AccountContext, title: String, selectedInde
     |> map { presentation, _ -> (ItemListControllerState, (ItemListNodeState, (Int, Bool?) -> Void)) in
         let data = ItemListPresentationData(presentation)
         let selected = selectedIndex()
-        let rows = titles.enumerated().map { index, label in
-            SettingsRow(stableId: index, section: 0, title: label, kind: .language(index == selected))
+        let previewRows = preview.map { makePreview in
+            [SettingsRow(stableId: -1, section: 0, title: "", kind: .preview(makePreview()))]
+        } ?? []
+        let rows = previewRows + titles.enumerated().map { index, label in
+            SettingsRow(stableId: index, section: previewRows.isEmpty ? 0 : 1, title: label, kind: .language(index == selected))
         }
         return (ItemListControllerState(presentationData: data, title: .text(title),
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
     }
-    return ItemListController(context: context, state: state)
+    return ExteraSettingsListController(context: context, state: state)
 }
 
 private func exteraSwipeValue(_ store: ExteraSettingsStore, _ strings: ExteraStrings) -> String {
@@ -548,5 +574,5 @@ private func exteraSwipeController(context: AccountContext) -> ViewController {
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
     }
-    return ItemListController(context: context, state: state)
+    return ExteraSettingsListController(context: context, state: state)
 }

@@ -17,6 +17,9 @@ public final class ExteraPillStrip: UIView, UIScrollViewDelegate {
     private var active = false
     private var selecting: ((ExteraPill) -> Void)?
     private var timer: Timer?
+    private var remoteTask: Task<Void, Never>?
+    private var remoteValues: [ExteraPill: ExteraPillLiveData.Reading] = [:]
+    private var remoteAllowed = false
     private var needsLoopPosition = false
 
     public override init(frame: CGRect) {
@@ -39,14 +42,21 @@ public final class ExteraPillStrip: UIView, UIScrollViewDelegate {
 
     required init?(coder: NSCoder) { return nil }
 
-    deinit { self.timer?.invalidate() }
+    deinit {
+        self.timer?.invalidate()
+        self.remoteTask?.cancel()
+    }
 
-    public func update(configuration: ExteraPillConfiguration, language: String, foreground: UIColor, accent: UIColor, surface: UIColor, dark: Bool, proxyEnabled: Bool?, active: Bool, selecting: @escaping (ExteraPill) -> Void) {
+    public func update(configuration: ExteraPillConfiguration, language: String, foreground: UIColor, accent: UIColor, surface: UIColor, dark: Bool, proxyEnabled: Bool?, active: Bool, permitRequests: Bool = true, selecting: @escaping (ExteraPill) -> Void) {
         let configuration = configuration.normalized
         let appearanceChanged = self.configuration != configuration || self.language != language || self.foreground != foreground
             || self.accent != accent || self.surface != surface || self.dark != dark
         let proxyChanged = self.proxyEnabled != proxyEnabled
-        let timerChanged = self.configuration.widgets != configuration.widgets || self.configuration.refreshInterval != configuration.refreshInterval || self.active != active
+        let remoteAllowed = permitRequests && configuration.allowExternalSources == true
+        let remoteChanged = self.remoteAllowed != remoteAllowed || self.configuration.weatherCity != configuration.weatherCity
+        let timerChanged = self.configuration.widgets != configuration.widgets || self.configuration.refreshInterval != configuration.refreshInterval || self.active != active || remoteChanged
+        self.remoteAllowed = remoteAllowed
+        if remoteChanged { self.remoteValues = [:] }
         self.configuration = configuration
         self.language = language
         self.foreground = foreground
@@ -142,14 +152,18 @@ public final class ExteraPillStrip: UIView, UIScrollViewDelegate {
                     button.layer.borderColor = self.foreground.withAlphaComponent(0.18).cgColor
                 }
                 button.heightAnchor.constraint(equalToConstant: CGFloat(self.configuration.capsuleHeight)).isActive = true
-                button.addAction(UIAction { [weak self] _ in self?.selecting?(widget) }, for: .touchUpInside)
+                button.addAction(UIAction { [weak self] _ in
+                    guard let self else { return }
+                    if widget.usesNetwork { self.refreshRemote() }
+                    self.selecting?(widget)
+                }, for: .touchUpInside)
                 self.buttons[widget, default: []].append(button)
                 stack.addArrangedSubview(button)
             }
             self.track.addArrangedSubview(stack)
             self.stacks.append(stack)
         }
-        self.refresh(widget: .memory)
+        for widget in self.configuration.widgets { self.refresh(widget: widget) }
         self.needsLoopPosition = true
         self.setNeedsLayout()
     }
@@ -157,15 +171,43 @@ public final class ExteraPillStrip: UIView, UIScrollViewDelegate {
     private func updateTimer() {
         self.timer?.invalidate()
         self.timer = nil
-        guard self.window != nil, self.active, self.buttons[.memory] != nil else { return }
+        self.remoteTask?.cancel()
+        self.remoteTask = nil
+        let samplesMemory = self.buttons[.memory] != nil
+        let samplesNetwork = self.remoteAllowed && self.configuration.widgets.contains(where: \.usesNetwork)
+        guard self.window != nil, self.active, samplesMemory || samplesNetwork else { return }
         self.refresh(widget: .memory)
+        self.refreshRemote()
         let timer = Timer(timeInterval: TimeInterval(self.configuration.refreshInterval), repeats: true) { [weak self] _ in
             guard let self, self.window?.windowScene?.activationState == .foregroundActive else { return }
             self.refresh(widget: .memory)
+            self.refreshRemote()
         }
         timer.tolerance = TimeInterval(self.configuration.refreshInterval) * 0.2
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    private func refreshRemote() {
+        guard self.remoteAllowed, self.active, self.window?.windowScene?.activationState == .foregroundActive,
+              self.remoteTask == nil else { return }
+        let config = self.configuration
+        let marketWidgets: Set<ExteraPill> = [.btc, .gram, .currency]
+        let needsMarkets = !marketWidgets.isDisjoint(with: config.widgets)
+        let city = config.widgets.contains(.weather) ? config.weatherCity : nil
+        guard needsMarkets || city != nil else { return }
+        self.remoteTask = Task { @MainActor [weak self] in
+            var values: [ExteraPill: ExteraPillLiveData.Reading] = [:]
+            if needsMarkets { values = await ExteraPillLiveData.shared.read(.markets, interval: config.refreshInterval) }
+            if !Task.isCancelled, let city {
+                let weather = await ExteraPillLiveData.shared.read(.weather(city), interval: config.refreshInterval)
+                values.merge(weather) { _, new in new }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.remoteValues = values
+            self.remoteTask = nil
+            for widget in config.widgets where widget.usesNetwork { self.refresh(widget: widget) }
+        }
     }
 
     private func refresh(widget: ExteraPill) {
@@ -177,6 +219,20 @@ public final class ExteraPillStrip: UIView, UIScrollViewDelegate {
             value = self.window != nil && self.active ? Self.memoryValue(strings) : "—"
         case .proxy:
             value = self.proxyEnabled.map { $0 ? strings.text("On", "Вкл.") : strings.text("Off", "Выкл.") } ?? "—"
+        case .custom, .custom2, .custom3:
+            value = self.configuration.text(for: widget).flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+        case .weather, .btc, .gram, .currency:
+            if let reading = self.remoteValues[widget] {
+                let number = NumberFormatter()
+                number.locale = Locale(identifier: self.language)
+                number.numberStyle = widget == .btc || widget == .gram ? .currency : .decimal
+                number.currencyCode = "USD"
+                number.maximumFractionDigits = widget == .weather ? 0 : widget == .currency ? 3 : 2
+                let formatted = number.string(from: NSNumber(value: reading.value)) ?? "—"
+                value = (reading.stale ? "≈ " : "") + formatted + (widget == .weather ? " °C" : "")
+            } else {
+                value = "—"
+            }
         }
         for button in buttons {
             var configuration = UIButton.Configuration.plain()

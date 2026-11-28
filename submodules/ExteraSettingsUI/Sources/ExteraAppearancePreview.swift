@@ -7,10 +7,15 @@ import UIKit
 
 enum ExteraLivePreview: Equatable {
     case avatars(CGFloat, Bool, Bool)
-    case chatList(stories: Bool, search: Bool, dividers: Bool, counters: Bool, snow: Bool)
+    case chatList(stories: Bool, search: Bool, dividers: Bool, counters: Bool, snow: Bool, senderAvatars: Bool)
     case header(title: String, centered: Bool, status: Bool, composeInMenu: Bool, compactCompose: Bool, blur: ExteraHeaderBlur)
     case folders(ExteraFolderIcons, ExteraFolderCounters)
     case navigation([ExteraTab])
+    case interface(ExteraNavigationAppearance)
+    case menu(ExteraMenuAppearance, ExteraMenuOutline)
+    case typography(ExteraTypography)
+    case chatTheme(ExteraChatTheme)
+    case motion(ExteraMotion)
     case messages(scale: CGFloat, shape: ExteraStickerShape, time: ExteraStickerTime, tails: Bool, editedIcon: Bool, reactions: Bool)
     case pills(ExteraPillConfiguration)
     case appIcon(imageName: String, title: String, credit: String)
@@ -20,8 +25,11 @@ enum ExteraLivePreview: Equatable {
         case .pills(let config): return CGFloat(config.capsuleHeight) + 28
         case .header, .folders, .navigation: return 98
         case .appIcon: return 160
+        case .interface: return 278
+        case .menu: return 210
+        case .motion: return 214
         case .chatList: return 182
-        case .avatars, .messages: return 148
+        case .avatars, .messages, .typography, .chatTheme: return 148
         }
     }
 }
@@ -89,7 +97,7 @@ private final class ExteraAppearancePreviewNode: ListViewItemNode {
             strip.update(configuration: configuration, language: item.presentationData.strings.baseLanguageCode,
                 foreground: list.itemPrimaryTextColor, accent: list.itemAccentColor,
                 surface: list.itemBlocksBackgroundColor, dark: item.presentationData.theme.overallDarkAppearance,
-                proxyEnabled: nil, active: true, selecting: { _ in })
+                proxyEnabled: nil, active: true, permitRequests: false, selecting: { _ in })
             newContent = strip
         case let .avatars(fraction, uniform, animate):
             let avatars = UIStackView(arrangedSubviews: ["A", "M", "#"].enumerated().map { index, title in
@@ -120,13 +128,22 @@ private final class ExteraAppearancePreviewNode: ListViewItemNode {
             stack.alignment = .center
             stack.spacing = 9
             newContent = stack
-        case let .chatList(stories, search, dividers, counters, snow):
+        case let .chatList(stories, search, dividers, counters, snow, senderAvatars):
             var rows: [UIView] = []
             if stories { rows.append(label("◉  ◉  ◉", size: 21, color: list.itemAccentColor)) }
             if search { rows.append(label("⌕  " + strings.text("Search", "Поиск"), color: list.itemSecondaryTextColor)) }
             for (name, count) in [(strings.text("Design team", "Дизайн"), "3"), (strings.text("Saved Messages", "Избранное"), "")] {
                 rows.append(label(name + (counters && !count.isEmpty ? "  ·  " + count : "")))
             }
+            let sender = UIButton(type: .system)
+            sender.setTitle(strings.text("Mira: See you soon", "Мира: До встречи"), for: .normal)
+            if senderAvatars { sender.setImage(UIImage(systemName: "person.crop.circle.fill"), for: .normal) }
+            sender.addAction(UIAction { [weak sender] _ in
+                guard let sender else { return }
+                sender.isSelected.toggle()
+                sender.setTitle(sender.isSelected ? strings.text("Mira: Sounds good!", "Мира: Договорились!") : strings.text("Mira: See you soon", "Мира: До встречи"), for: .normal)
+            }, for: .touchUpInside)
+            rows.insert(sender, at: max(0, rows.count - 1))
             let stack = UIStackView(arrangedSubviews: rows)
             stack.axis = .vertical
             stack.distribution = .fillEqually
@@ -145,6 +162,100 @@ private final class ExteraAppearancePreviewNode: ListViewItemNode {
             } else {
                 newContent = stack
             }
+        case let .motion(motion):
+            let tile = label(strings.text("Choose a transition", "Выбери переход"), size: 16)
+            tile.backgroundColor = list.itemAccentColor.withAlphaComponent(0.10)
+            tile.layer.cornerRadius = 12
+            tile.clipsToBounds = true
+            let buttons = ExteraMotionTarget.allCases.map { target -> UIButton in
+                let button = UIButton(type: .system)
+                let shortTitle: String
+                switch target {
+                case .chatOpen: shortTitle = strings.text("Chat", "Чат")
+                case .back: shortTitle = strings.text("Back", "Назад")
+                case .tabs: shortTitle = strings.text("Tab", "Вкладка")
+                case .menus: shortTitle = strings.text("Menu", "Меню")
+                case .settings: shortTitle = strings.text("Settings", "Настройки")
+                }
+                button.setTitle(shortTitle, for: .normal)
+                button.accessibilityLabel = target.title(strings)
+                button.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+                button.titleLabel?.adjustsFontSizeToFitWidth = true
+                button.addAction(UIAction { [weak tile] _ in
+                    guard let tile else { return }
+                    let active = motion.forTarget(target)
+                    let shift: CGFloat = target == .back ? -38 : 38
+                    tile.text = target.title(strings)
+                    tile.alpha = active.allowsMotion ? 0.36 : 1
+                    if target == .menus {
+                        tile.transform = active.restingOffset(horizontal: -38)
+                    } else {
+                        tile.transform = active.allowsMotion ? CGAffineTransform(translationX: shift, y: 0) : .identity
+                    }
+                    active.animate(duration: 0.28, { [weak tile] in
+                        tile?.transform = .identity
+                        tile?.alpha = 1
+                    })
+                }, for: .touchUpInside)
+                return button
+            }
+            let first = UIStackView(arrangedSubviews: Array(buttons.prefix(3)))
+            let second = UIStackView(arrangedSubviews: Array(buttons.suffix(2)))
+            first.distribution = .fillEqually
+            second.distribution = .fillEqually
+            first.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            second.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            let stack = UIStackView(arrangedSubviews: [tile, first, second])
+            stack.axis = .vertical
+            stack.spacing = 6
+            newContent = stack
+        case let .chatTheme(theme):
+            func color(_ rgb: UInt32) -> UIColor {
+                return UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+            }
+            let palette = theme.palette(dark: item.presentationData.theme.overallDarkAppearance)
+            self.host.backgroundColor = palette.map { color($0.wallpaper) } ?? list.itemBlocksBackgroundColor
+            let incoming = label(strings.text("  A quiet day  ", "  Спокойный день  "))
+            incoming.backgroundColor = list.itemBlocksBackgroundColor
+            incoming.layer.cornerRadius = 12
+            incoming.clipsToBounds = true
+            let outgoing = UIButton(type: .system)
+            outgoing.setTitle(strings.text("  Tap to reply  ", "  Нажми для ответа  "), for: .normal)
+            outgoing.setTitleColor(palette.map { color($0.accent) } ?? list.itemAccentColor, for: .normal)
+            outgoing.backgroundColor = palette.map { color($0.outgoing) } ?? list.itemAccentColor.withAlphaComponent(0.15)
+            outgoing.layer.cornerRadius = 12
+            outgoing.addAction(UIAction { [weak outgoing] _ in
+                guard let outgoing else { return }
+                outgoing.isSelected.toggle()
+                outgoing.setTitle(outgoing.isSelected ? strings.text("  Hello!  ", "  Привет!  ") : strings.text("  Tap to reply  ", "  Нажми для ответа  "), for: .normal)
+            }, for: .touchUpInside)
+            let stack = UIStackView(arrangedSubviews: [incoming, outgoing])
+            stack.axis = .vertical
+            stack.alignment = .center
+            stack.distribution = .fillEqually
+            stack.spacing = 8
+            newContent = stack
+        case let .typography(typography):
+            let title = label(strings.text("Design team", "Команда дизайна"), size: 16)
+            title.font = typography.font(.systemFont(ofSize: 16, weight: .semibold), weight: .semibold)
+            let message = UIButton(type: .system)
+            let font = typography.font(.systemFont(ofSize: 15), weight: .regular)
+            func sample(_ value: String) -> NSAttributedString {
+                return typography.emojiStyle.applying(to: NSAttributedString(string: value, attributes: [.font: font, .foregroundColor: list.itemAccentColor]))
+            }
+            let first = sample(strings.text("Tap to change the sample 👋", "Нажмите, чтобы изменить пример 👋"))
+            let second = sample(strings.text("Tomorrow at 10:30 ☕", "Завтра в 10:30 ☕"))
+            message.setAttributedTitle(first, for: .normal)
+            message.titleLabel?.adjustsFontSizeToFitWidth = true
+            message.addAction(UIAction { [weak message] _ in
+                guard let message else { return }
+                message.isSelected.toggle()
+                message.setAttributedTitle(message.isSelected ? second : first, for: .normal)
+            }, for: .touchUpInside)
+            let stack = UIStackView(arrangedSubviews: [title, message])
+            stack.axis = .vertical
+            stack.distribution = .fillEqually
+            newContent = stack
         case let .header(title, centered, status, composeInMenu, compactCompose, blur):
             let titleLabel = label(title + (status ? "  ✦" : ""), size: 19)
             titleLabel.textAlignment = centered ? .center : .left
@@ -215,6 +326,41 @@ private final class ExteraAppearancePreviewNode: ListViewItemNode {
             stack.distribution = .fillEqually
             stack.alignment = .center
             newContent = stack
+        case let .interface(config):
+            let preview = ExteraInterfacePreviewView(frame: .zero)
+            preview.configure(config: config, data: item.presentationData, strings: strings)
+            newContent = preview
+        case let .menu(config, outline):
+            let card = UIView()
+            let surface = ExteraMenuSurface(frame: .zero)
+            surface.configure(config, outline: outline, base: item.presentationData.theme.contextMenu.backgroundColor,
+                accent: list.itemAccentColor, dark: item.presentationData.theme.overallDarkAppearance)
+            let background = UIStackView(arrangedSubviews: [
+                label(strings.text("Preview message", "Пример сообщения"), color: list.itemAccentColor),
+                label(strings.text("Touch a menu action", "Нажми на действие меню"), color: list.itemSecondaryTextColor),
+            ])
+            background.axis = .vertical
+            background.distribution = .fillEqually
+            background.backgroundColor = list.itemAccentColor.withAlphaComponent(0.15)
+            background.layer.cornerRadius = 12
+            let bounds = CGRect(origin: .zero, size: self.host.bounds.insetBy(dx: 10, dy: 10).size)
+            card.frame = bounds
+            background.frame = bounds
+            card.addSubview(background)
+            surface.frame = bounds.insetBy(dx: 22, dy: 36)
+            card.addSubview(surface)
+            let actions = UIStackView()
+            actions.axis = .vertical
+            actions.distribution = .fillEqually
+            for title in [strings.text("Reply", "Ответить"), strings.text("Copy", "Копировать"), strings.text("Forward", "Переслать")] {
+                let button = UIButton(type: .system)
+                button.setTitle(title, for: .normal)
+                button.addAction(UIAction { _ in (background.arrangedSubviews.last as? UILabel)?.text = title }, for: .touchUpInside)
+                actions.addArrangedSubview(button)
+            }
+            actions.frame = surface.frame.insetBy(dx: 12, dy: 2)
+            card.addSubview(actions)
+            newContent = card
         case let .messages(scale, shape, time, tails, editedIcon, reactions):
             let incoming = label((tails ? "◂  " : "") + strings.text("On my way!", "Уже иду!"), color: list.itemPrimaryTextColor)
             let outgoing = label(strings.text("See you", "До встречи") + (editedIcon ? "  ✎" : "  " + strings.text("edited", "изм.")), color: list.itemAccentColor)

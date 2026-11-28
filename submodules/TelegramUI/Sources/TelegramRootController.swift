@@ -1,5 +1,6 @@
 import Foundation
 import ExteraSettings
+import ExteraSettingsUI
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -91,6 +92,13 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     private var presentationDataDisposable: Disposable?
     private var presentationData: PresentationData
     
+    private let drawerAccountsDisposable = MetaDisposable()
+    private let drawerAvatarDisposable = MetaDisposable()
+    private var drawerAccountInfo: [AccountWithInfo] = []
+    private var drawerAvatar: UIImage?
+    private var drawerAccountsExpanded = false
+    private var drawerNewsAvailable = false
+
     private var detailsPlaceholderNode: DetailsChatPlaceholderNode?
     
     private var applicationInFocusDisposable: Disposable?
@@ -123,6 +131,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
                     (strongSelf.rootTabController as? TabBarControllerImpl)?.updateTheme(theme: presentationData.theme)
                     strongSelf.rootTabController?.statusBar.statusBarStyle = presentationData.theme.rootController.statusBarStyle.style
                 }
+                strongSelf.configureExteraDrawer()
             }
         })
         
@@ -149,6 +158,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
     
     deinit {
+        self.drawerAccountsDisposable.dispose()
+        self.drawerAvatarDisposable.dispose()
         self.permissionsDisposable?.dispose()
         self.presentationDataDisposable?.dispose()
         self.applicationInFocusDisposable?.dispose()
@@ -202,7 +213,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
     
     public func addRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
-        let tabBarController = TabBarControllerImpl(theme: self.presentationData.theme, strings: self.presentationData.strings)
+        let tabBarController = ExteraRootTabBarController(theme: self.presentationData.theme, strings: self.presentationData.strings)
         tabBarController.navigationPresentation = .master
         let chatListController = self.context.sharedContext.makeChatListController(context: self.context, location: .chatList(groupId: .root), controlsHistoryPreload: true, hideNetworkActivityStatus: false, previewing: false, enableDebugActions: !GlobalExperimentalSettings.isAppStoreBuild)
         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
@@ -253,7 +264,9 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         self.chatListController = chatListController
         self.accountSettingsController = accountSettingsController
         self.rootTabController = tabBarController
+        self.drawerNewsAvailable = showNewsTab
         self.pushViewController(tabBarController, animated: false)
+        self.configureExteraDrawer()
     }
         
     public func updateRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
@@ -278,6 +291,107 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             selectedIndex = controllers.firstIndex(where: { $0 === self.chatListController })
         }
         rootTabController.setControllers(controllers, selectedIndex: selectedIndex)
+        self.drawerNewsAvailable = showNewsTab
+        self.configureExteraDrawer()
+    }
+
+    private func configureExteraDrawer() {
+        guard let tabBar = self.rootTabController as? ExteraRootTabBarController else { return }
+        let strings = ExteraStrings(languageCode: self.presentationData.strings.baseLanguageCode)
+        var tabRoles: [ObjectIdentifier: ExteraTab] = [:]
+        let roleControllers: [(ExteraTab, ViewController?)] = [
+            (.chats, self.chatListController), (.calls, self.callListController),
+            (.news, self.newsController), (.settings, self.accountSettingsController),
+        ]
+        for (role, controller) in roleControllers {
+            if let controller { tabRoles[ObjectIdentifier(controller.tabBarItem)] = role }
+        }
+        tabBar.configureDrawer(ExteraNavigationAppearance(), tabRoles: tabRoles, theme: self.presentationData.theme, strings: strings,
+            onOpen: { [weak self] in self?.openExteraDrawer() },
+            onClose: { [weak self] in
+                guard let self else { return }
+                self.drawerAccountsDisposable.set(nil)
+                self.drawerAvatarDisposable.set(nil)
+                self.drawerAccountsExpanded = false
+            })
+        self.renderExteraDrawer()
+    }
+
+    private func openExteraDrawer() {
+        self.renderExteraDrawer()
+        self.drawerAccountsDisposable.set((self.context.sharedContext.activeAccountsWithInfo
+        |> deliverOnMainQueue).start(next: { [weak self] _, accounts in
+            guard let self else { return }
+            self.drawerAccountInfo = accounts
+            self.renderExteraDrawer()
+            if let account = accounts.first(where: { $0.account.id == self.context.account.id }) {
+                self.drawerAvatarDisposable.set((peerAvatarCompleteImage(postbox: account.account.postbox, peer: account.peer, size: CGSize(width: 42, height: 42))
+                |> deliverOnMainQueue).start(next: { [weak self] image in
+                    self?.drawerAvatar = image
+                    self?.renderExteraDrawer()
+                }))
+            }
+        }))
+    }
+
+    private func renderExteraDrawer() {
+        guard let tabBar = self.rootTabController as? ExteraRootTabBarController else { return }
+        let strings = ExteraStrings(languageCode: self.presentationData.strings.baseLanguageCode)
+        let appearance = ExteraNavigationAppearance()
+        let settings = appearance.interface
+        let account = self.drawerAccountInfo.first(where: { $0.account.id == self.context.account.id })
+        let title = account?.peer.displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder) ?? "exteraGram"
+        let subtitle = account?.peer.addressName.flatMap { $0.isEmpty ? nil : "@\($0)" }
+        let items = settings.drawerOrder.filter { !settings.hiddenDrawerItems.contains($0) && ($0 != .news || self.drawerNewsAvailable) }
+        var rows = items.map { item in
+            ExteraDrawerRow(title: item.title(strings), symbol: item.symbol, image: appearance.iconPack.image(item), selected: item == .accounts && self.drawerAccountsExpanded, action: { [weak self] in
+                self?.selectDrawerItem(item)
+            })
+        }
+        if self.drawerAccountsExpanded, let index = items.firstIndex(of: .accounts) {
+            let accounts = self.drawerAccountInfo.map { account in
+                ExteraDrawerRow(title: account.peer.displayTitle(strings: self.presentationData.strings, displayOrder: self.presentationData.nameDisplayOrder),
+                    symbol: "person.crop.circle", selected: account.account.id == self.context.account.id, action: { [weak self] in
+                        guard let self else { return }
+                        (self.rootTabController as? ExteraRootTabBarController)?.dismissDrawer()
+                        if account.account.id != self.context.account.id {
+                            self.context.sharedContext.switchToAccount(id: account.account.id, fromSettingsController: nil, withChatListController: nil)
+                        }
+                    })
+            }
+            rows.insert(contentsOf: accounts, at: index + 1)
+        }
+        tabBar.updateDrawer(title: title, subtitle: subtitle, photo: self.drawerAvatar, rows: rows)
+    }
+
+    private func selectDrawerItem(_ item: ExteraDrawerItem) {
+        guard let tabBar = self.rootTabController as? ExteraRootTabBarController else { return }
+        if item == .accounts {
+            self.drawerAccountsExpanded.toggle()
+            self.renderExteraDrawer()
+            return
+        }
+        tabBar.dismissDrawer()
+        switch item {
+        case .chats: self.openChats()
+        case .settings: self.openSettings(edit: false)
+        case .extera: self.pushViewController(exteraSettingsController(context: self.context))
+        case .contacts: self.openContacts()
+        case .newChat: self.openRootCompose()
+        case .calls:
+            if let index = tabBar.controllers.firstIndex(where: { $0 === self.callListController }) {
+                tabBar.selectedIndex = index
+            } else {
+                self.pushViewController(CallListController(context: self.context, mode: .navigation))
+            }
+        case .news:
+            if let index = tabBar.controllers.firstIndex(where: { $0 === self.newsController }) {
+                tabBar.selectedIndex = index
+            } else if self.drawerNewsAvailable {
+                self.pushViewController(NewsScreen(context: self.context))
+            }
+        case .accounts: break
+        }
     }
     
     public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {

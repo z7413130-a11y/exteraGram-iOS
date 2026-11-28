@@ -40,5 +40,5 @@ func exteraTabOrderController(context: AccountContext) -> ViewController {
             leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentation.strings.Common_Back)),
             (ItemListNodeState(presentationData: data, entries: rows, style: .blocks, animateChanges: false), action))
     }
-    return ItemListController(context: context, state: state)
+    return ExteraSettingsListController(context: context, state: state)
 }

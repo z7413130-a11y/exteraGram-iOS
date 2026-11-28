@@ -230,6 +230,10 @@ public protocol CustomViewControllerNavigationDataSummary: AnyObject {
     }
     /// This screen's side when the screen above it expands out of it (a push or pop between the two); nil: it does not
     /// take part.
+    open func navigationSlideSpring(for operation: NavigationExpansionOperation) -> NavigationTransitionSpring? {
+        return nil
+    }
+
     open func navigationExpansionSource(above controller: ViewController, operation: NavigationExpansionOperation) -> NavigationExpansionSource? {
         return nil
     }

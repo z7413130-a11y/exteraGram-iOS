@@ -1,3 +1,4 @@
+import Foundation
 /// Storage schema mapped independently from the public Android ExteraConfig.kt.
 /// Android-only capabilities are reserved for future ports. Their defaults never activate iOS behavior.
 /// Defaults which depend on an Android subsystem are represented by neutral iOS values.
@@ -30,7 +31,7 @@ public enum ExteraPreferences {
     public static let hideStories = ExteraPreference<Bool>("hideStories", .appearance, false)
     public static let hideFloatingButton = ExteraPreference<Bool>("hideFloatingButton", .appearance, false)
     public static let hideDialogsSearchBar = ExteraPreference<Bool>("hideDialogsSearchBar", .appearance, false)
-    public static let senderMiniAvatars = ExteraPreference<Bool>("senderMiniAvatars", .appearance, true)
+    public static let senderMiniAvatars = ExteraPreference<Bool>("senderMiniAvatars", .appearance, false)
     // Keep Telegram's existing iOS title until the user chooses an alternative.
     public static let titleText = ExteraPreference<Int>("titleText", .appearance, ExteraChatListTitle.chats.rawValue)
     public static let tabIcons = ExteraPreference<Int>("tabIcons", .appearance, 1)
@@ -66,7 +67,7 @@ public enum ExteraPreferences {
     public static let gooeyAvatarAnimation = ExteraPreference<Bool>("gooeyAvatarAnimation", .appearance, true)
     public static let customThemes = ExteraPreference<Bool>("customThemes", .appearance, true)
     public static let predictiveBackIntensity = ExteraPreference<Double>("predictiveBackIntensity", .appearance, 1.0)
-    public static let transitionAnimation = ExteraPreference<Int>("transitionAnimation", .appearance, 2)
+    public static let transitionAnimation = ExteraPreference<Int>("transitionAnimation", .appearance, 0)
     public static let glassOutlineStyle = ExteraPreference<Int>("glassOutlineStyle", .appearance, 0)
     public static let glassMessageMenu = ExteraPreference<Bool>("glassMessageMenu", .appearance, true)
     public static let headerBlurStyle = ExteraPreference<Int>("headerBlurStyle", .appearance, ExteraHeaderBlur.standard.rawValue)
@@ -192,11 +193,22 @@ public enum ExteraPreferences {
     public static let pillStack = ExteraPreference<ExteraPillConfiguration>("ios.pillStack", .appearance, ExteraPillConfiguration())
     public static let rootTabOrder = ExteraPreference<[ExteraTab]>("ios.rootTabOrder", .appearance, ExteraTab.allCases)
     public static let hideNewsTab = ExteraPreference<Bool>("ios.hideNewsTab", .appearance, false)
+    public static let motionSpeed = ExteraPreference<Int>("ios.motionSpeed", .appearance, 100)
+    public static let motionTargets = ExteraPreference<Set<ExteraMotionTarget>>("ios.motionTargets", .appearance, Set(ExteraMotionTarget.allCases))
+    public static let motionSpring = ExteraPreference<Int>("ios.motionSpring", .appearance, 50)
+    public static let customIconPacks = ExteraPreference<[ExteraCustomIconPack]>("ios.customIconPacks", .appearance, [])
+    public static let activeCustomIconPack = ExteraPreference<UUID?>("ios.activeIconPack", .appearance, nil)
+    public static let geometry = ExteraPreference<ExteraGeometry>("ios.interfaceGeometry", .appearance, ExteraGeometry())
+    public static let interfaceStyle = ExteraPreference<ExteraSurfaceStyle>("ios.interfaceStyle", .appearance, .telegram)
+    public static let localChatThemes = ExteraPreference<[String: ExteraChatTheme]>("ios.localChatThemes", .appearance, [:])
+    public static let typography = ExteraPreference<ExteraTypography>("ios.typography", .appearance, ExteraTypography())
+    public static let interfaceAppearance = ExteraPreference<ExteraInterfaceAppearance>("ios.interfaceAppearance", .appearance, ExteraInterfaceAppearance())
+    public static let menuAppearance = ExteraPreference<ExteraMenuAppearance>("ios.menuAppearance", .appearance, ExteraMenuAppearance())
 
     static let iOSDefinitions = [
         translateDrafts.definition, hideCallsTab.definition, hidePremiumBadges.definition, hideAnimatedEmoji.definition,
         confirmStickerSend.definition, confirmGifSend.definition, confirmCall.definition, hideVideoRecording.definition,
-        pillStack.definition, rootTabOrder.definition, hideNewsTab.definition,
+        pillStack.definition, rootTabOrder.definition, hideNewsTab.definition, interfaceAppearance.definition, menuAppearance.definition, typography.definition, motionSpeed.definition, motionSpring.definition, motionTargets.definition, customIconPacks.definition, activeCustomIconPack.definition, localChatThemes.definition, geometry.definition, interfaceStyle.definition,
     ]
 
     public static let androidDefinitions: [ExteraSettingDefinition] = [

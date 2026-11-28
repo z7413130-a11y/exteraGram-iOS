@@ -391,6 +391,7 @@ public final class TabBarComponent: Component {
         }
 
         public let content: Content
+        public let imageOverride: UIImage?
         public let action: (Bool) -> Void
         public let doubleTapAction: (() -> Void)?
         public let contextAction: ((ContextGesture, ContextExtractedContentContainingView) -> Void)?
@@ -429,8 +430,9 @@ public final class TabBarComponent: Component {
             return nil
         }
         
-        public init(content: Content, action: @escaping (Bool) -> Void, doubleTapAction: (() -> Void)?, contextAction: ((ContextGesture, ContextExtractedContentContainingView) -> Void)?) {
+        public init(content: Content, imageOverride: UIImage? = nil, action: @escaping (Bool) -> Void, doubleTapAction: (() -> Void)?, contextAction: ((ContextGesture, ContextExtractedContentContainingView) -> Void)?) {
             self.content = content
+            self.imageOverride = imageOverride
             self.action = action
             self.doubleTapAction = doubleTapAction
             self.contextAction = contextAction
@@ -440,7 +442,7 @@ public final class TabBarComponent: Component {
             if lhs === rhs {
                 return true
             }
-            if lhs.content != rhs.content {
+            if lhs.content != rhs.content || lhs.imageOverride != rhs.imageOverride {
                 return false
             }
             if (lhs.doubleTapAction == nil) != (rhs.doubleTapAction == nil) {
@@ -487,6 +489,7 @@ public final class TabBarComponent: Component {
     /// A horizontal regular bar takes iOS 27's portrait tab bar layout (`tabBarSystemItemsLayout`); without it, its
     /// items share the available width (`tabBarItemsLayout`), as where iOS would switch to its wide bar.
     public let usesSystemLayout: Bool
+    public let horizontalCornerRadius: CGFloat?
 
     public init(
         theme: PresentationTheme,
@@ -499,7 +502,8 @@ public final class TabBarComponent: Component {
         outerInsets: UIEdgeInsets,
         axis: Axis,
         isCompact: Bool,
-        usesSystemLayout: Bool = true
+        usesSystemLayout: Bool = true,
+        horizontalCornerRadius: CGFloat? = nil
     ) {
         self.theme = theme
         self.tintSelectedItem = tintSelectedItem
@@ -512,6 +516,7 @@ public final class TabBarComponent: Component {
         self.axis = axis
         self.isCompact = isCompact
         self.usesSystemLayout = usesSystemLayout
+        self.horizontalCornerRadius = horizontalCornerRadius
     }
     
     public static func ==(lhs: TabBarComponent, rhs: TabBarComponent) -> Bool {
@@ -545,7 +550,7 @@ public final class TabBarComponent: Component {
         if lhs.isCompact != rhs.isCompact {
             return false
         }
-        if lhs.usesSystemLayout != rhs.usesSystemLayout {
+        if lhs.usesSystemLayout != rhs.usesSystemLayout || lhs.horizontalCornerRadius != rhs.horizontalCornerRadius {
             return false
         }
         return true
@@ -562,6 +567,7 @@ public final class TabBarComponent: Component {
     }
     
     public final class View: UIView, UIGestureRecognizerDelegate {
+        public private(set) var tabRegionFrame: CGRect = .zero
         private let backgroundContainer: GlassBackgroundContainerView
         private let liquidLensView: LiquidLensView
         private let contextGestureContainerView: ContextControllerSourceView
@@ -1075,6 +1081,7 @@ public final class TabBarComponent: Component {
                 tabsFrame.origin.x = -component.outerInsets.left - tabsFrame.width
             }
 
+            self.tabRegionFrame = search?.isActive == true ? .zero : tabsFrame
             transition.setFrame(view: self.contextGestureContainerView, frame: tabsFrame)
             transition.setFrame(view: self.liquidLensView, frame: CGRect(origin: CGPoint(), size: tabsSize))
             
@@ -1092,7 +1099,8 @@ public final class TabBarComponent: Component {
                 lensSelectionFrame = CGRect(x: 0.0, y: 0.0, width: 48.0, height: 48.0)
             }
             
-            self.liquidLensView.update(size: lensSize, cornerRadius: component.axis == .vertical ? lensSize.width * 0.5 : nil, selectionOrigin: lensSelectionFrame.origin, selectionSize: lensSelectionFrame.size, inset: 4.0, isDark: component.theme.overallDarkAppearance, isLifted: self.selectionGestureState != nil && component.isLiftedStateEnabled, isCollapsed: isLensCollapsed, transition: transition)
+            let lensRadius = component.axis == .vertical ? lensSize.width * 0.5 : component.horizontalCornerRadius.map { min($0, lensSize.height / 2) }
+            self.liquidLensView.update(size: lensSize, cornerRadius: lensRadius, selectionOrigin: lensSelectionFrame.origin, selectionSize: lensSelectionFrame.size, inset: 4.0, isDark: component.theme.overallDarkAppearance, isLifted: self.selectionGestureState != nil && component.isLiftedStateEnabled, isCollapsed: isLensCollapsed, transition: transition)
 
             var size = tabsSize
 
@@ -1353,7 +1361,7 @@ private final class ItemComponent: Component {
                 title = tabBarItem.title ?? " "
                 badgeValue = tabBarItem.badgeValue
 
-                if let animationName = tabBarItem.animationName {
+                if component.item.imageOverride == nil, let animationName = tabBarItem.animationName {
                     if let imageIcon = self.imageIcon {
                         self.imageIcon = nil
                         imageIcon.view?.removeFromSuperview()
@@ -1414,7 +1422,7 @@ private final class ItemComponent: Component {
                         self.imageIcon = imageIcon
                     }
 
-                    let iconImage = component.isSelected ? tabBarItem.selectedImage : tabBarItem.image
+                    let iconImage = component.item.imageOverride ?? (component.isSelected ? tabBarItem.selectedImage : tabBarItem.image)
                     let iconSize = imageIcon.update(
                         transition: iconTransition,
                         component: AnyComponent(Image(

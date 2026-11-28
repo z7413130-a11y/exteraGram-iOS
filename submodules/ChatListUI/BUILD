@@ -13,6 +13,7 @@ swift_library(
     ],
     deps = [
         "//submodules/ExteraSettings",
+        "//submodules/ExteraSettingsUI",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",

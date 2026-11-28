@@ -6845,6 +6845,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             return themeSettings
         }
         
+        let localTheme: Signal<ExteraChatTheme, NoError>
+        if let peerId = self.chatLocation.peerId, peerId.namespace != Namespaces.Peer.SecretChat {
+            let store = ExteraSettingsStore.shared
+            let key = ExteraChatTheme.key(account: context.account.id.int64, peer: peerId.toInt64())
+            localTheme = store.changes
+            |> map { _ in store.value(for: ExteraPreferences.localChatThemes)[key] ?? .inherited }
+            |> distinctUntilChanged
+        } else {
+            localTheme = .single(.inherited)
+        }
         let accountManager = context.sharedContext.accountManager
         let currentChatTheme = Atomic<(ChatTheme?, Bool)?>(value: nil)
         self.presentationDataDisposable = combineLatest(
@@ -6854,8 +6864,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             context.engine.themes.getChatThemes(accountManager: accountManager, onlyCached: true),
             chatTheme,
             self.chatThemeAndDarkAppearancePreviewPromise.get(),
-            chatWallpaper
-        ).startStrict(next: { [weak self] presentationData, themeSettings, chatThemes, chatTheme, chatThemeAndDarkAppearance, chatWallpaper in
+            chatWallpaper,
+            localTheme
+        ).startStrict(next: { [weak self] presentationData, themeSettings, chatThemes, chatTheme, chatThemeAndDarkAppearance, chatWallpaper, localTheme in
             if let strongSelf = self {
                 let (chatThemePreview, darkAppearancePreview) = chatThemeAndDarkAppearance
                 
@@ -7033,6 +7044,21 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     presentationData = presentationData.withUpdated(chatWallpaper: chatWallpaper)
                 }
                 
+                if strongSelf.forcedTheme == nil, strongSelf.forcedWallpaper == nil,
+                   chatThemePreview == nil, darkAppearancePreview == nil,
+                   let palette = localTheme.palette(dark: useDarkAppearance) {
+                    let wallpaper: TelegramWallpaper = .color(palette.wallpaper)
+                    if let theme = makePresentationTheme(mediaBox: accountManager.mediaBox,
+                        themeReference: .builtin(useDarkAppearance ? .night : .day),
+                        accentColor: UIColor(rgb: palette.accent), bubbleColors: [palette.outgoing], wallpaper: wallpaper) {
+                        if presentationData.chatBubbleCorners.bubbleMode {
+                            presentationData = presentationData.withUpdated(theme: theme).withUpdated(chatWallpaper: wallpaper)
+                        } else {
+                            let plain = bubblelessPresentationTheme(theme)
+                            presentationData = presentationData.withUpdated(theme: plain).withUpdated(chatWallpaper: bubblelessChatWallpaper(theme: plain))
+                        }
+                    }
+                }
                 let isFirstTime = !strongSelf.didSetPresentationData
                 strongSelf.presentationData = presentationData
                 strongSelf.didSetPresentationData = true
@@ -8776,6 +8802,12 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             return sideListPanel.listController.navigationBarTransitionSource
         }
         return super.navigationBarTransitionSource
+    }
+
+    override public func navigationSlideSpring(for operation: NavigationExpansionOperation) -> NavigationTransitionSpring? {
+        let motion = ExteraMotion()
+        guard let timing = motion.slideTiming(for: operation == .push ? .chatOpen : .back, interactive: operation == .interactivePop) else { return nil }
+        return NavigationTransitionSpring(duration: timing.duration, bounce: timing.bounce)
     }
 
     override public func navigationExpansionSource(above controller: ViewController, operation: NavigationExpansionOperation) -> NavigationExpansionSource? {
