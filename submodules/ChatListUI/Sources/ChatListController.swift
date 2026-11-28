@@ -2992,7 +2992,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             var rightButtons = primaryContext.rightButtons
             if case .chatList(.root) = self.location, !self.chatListDisplayNode.mainContainerNode.currentItemNode.currentState.editing {
                 let store = ExteraSettingsStore.shared
-                if let index = rightButtons.firstIndex(where: { $0.id == "compose" }) {
+                if let index = rightButtons.firstIndex(where: { $0.id == AnyHashable("compose") }) {
                     let compose = rightButtons[index]
                     let corner: CGFloat? = store.value(for: ExteraPreferences.squareFab) ? 9 : nil
                     if store.value(for: ExteraPreferences.hideFloatingButton) {
