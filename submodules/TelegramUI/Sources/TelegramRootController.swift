@@ -325,7 +325,7 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             self.drawerAccountInfo = accounts
             self.renderExteraDrawer()
             if let account = accounts.first(where: { $0.account.id == self.context.account.id }) {
-                self.drawerAvatarDisposable.set((peerAvatarCompleteImage(postbox: account.account.postbox, peer: account.peer, size: CGSize(width: 42, height: 42))
+                self.drawerAvatarDisposable.set((peerAvatarCompleteImage(account: account.account, peer: account.peer, size: CGSize(width: 42, height: 42))
                 |> deliverOnMainQueue).start(next: { [weak self] image in
                     self?.drawerAvatar = image
                     self?.renderExteraDrawer()
